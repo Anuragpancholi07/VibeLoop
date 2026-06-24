@@ -9,6 +9,55 @@ CREATE EXTENSION IF NOT EXISTS "postgis";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- ============================================================
+-- CLEANUP (Drops existing tables and enums to avoid conflicts)
+-- ============================================================
+DROP TABLE IF EXISTS post_likes CASCADE;
+DROP TABLE IF EXISTS chat_room_members CASCADE;
+DROP TABLE IF EXISTS admin_actions CASCADE;
+DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS reports CASCADE;
+DROP TABLE IF EXISTS follows CASCADE;
+DROP TABLE IF EXISTS reviews CASCADE;
+DROP TABLE IF EXISTS notifications CASCADE;
+DROP TABLE IF EXISTS saved_events CASCADE;
+DROP TABLE IF EXISTS chat_messages CASCADE;
+DROP TABLE IF EXISTS chat_rooms CASCADE;
+DROP TABLE IF EXISTS community_events CASCADE;
+DROP TABLE IF EXISTS community_posts CASCADE;
+DROP TABLE IF EXISTS community_members CASCADE;
+DROP TABLE IF EXISTS communities CASCADE;
+DROP TABLE IF EXISTS refunds CASCADE;
+DROP TABLE IF EXISTS payments CASCADE;
+DROP TABLE IF EXISTS event_checkins CASCADE;
+DROP TABLE IF EXISTS event_tickets CASCADE;
+DROP TABLE IF EXISTS event_waitlists CASCADE;
+DROP TABLE IF EXISTS event_attendees CASCADE;
+DROP TABLE IF EXISTS event_images CASCADE;
+DROP TABLE IF EXISTS events CASCADE;
+DROP TABLE IF EXISTS event_categories CASCADE;
+DROP TABLE IF EXISTS host_verifications CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;
+
+DROP TYPE IF EXISTS user_role CASCADE;
+DROP TYPE IF EXISTS event_type CASCADE;
+DROP TYPE IF EXISTS event_status CASCADE;
+DROP TYPE IF EXISTS gender_restriction CASCADE;
+DROP TYPE IF EXISTS approval_type CASCADE;
+DROP TYPE IF EXISTS attendee_status CASCADE;
+DROP TYPE IF EXISTS ticket_status CASCADE;
+DROP TYPE IF EXISTS payment_status CASCADE;
+DROP TYPE IF EXISTS refund_status CASCADE;
+DROP TYPE IF EXISTS community_type CASCADE;
+DROP TYPE IF EXISTS member_role CASCADE;
+DROP TYPE IF EXISTS verification_status CASCADE;
+DROP TYPE IF EXISTS verification_method CASCADE;
+DROP TYPE IF EXISTS report_reason CASCADE;
+DROP TYPE IF EXISTS report_status CASCADE;
+DROP TYPE IF EXISTS report_target_type CASCADE;
+DROP TYPE IF EXISTS notification_type CASCADE;
+DROP TYPE IF EXISTS gender_type CASCADE;
+
+-- ============================================================
 -- ENUMS
 -- ============================================================
 
