@@ -1,6 +1,6 @@
-# VibeLoop
+# VibeLoop 🚀
 
-VibeLoop is a production-ready, mobile-first social event discovery, community, networking, and ticketing platform. It allows users to discover local experiences, join interest-based communities, buy tickets, scan QR codes, message in real-time, and host events.
+VibeLoop is a premium, production-ready, mobile-first social event discovery, community, networking, and ticketing platform. It allows users to discover local experiences, join interest-based communities, buy tickets, scan QR codes, message in real-time, and host events.
 
 ## 🛠️ Tech Stack
 - **Frontend:** React 19, Vite, TypeScript, Tailwind CSS v4, React Router 7, React Query, Lucide Icons, i18next, Canvas Confetti
