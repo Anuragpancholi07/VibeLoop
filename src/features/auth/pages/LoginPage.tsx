@@ -17,6 +17,25 @@ export function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const getErrorMessage = (err: any, defaultMsg: string) => {
+    console.error('Auth error:', err);
+    if (!err) return defaultMsg;
+    if (typeof err === 'string') return err;
+    if (err.error_description) return err.error_description;
+    if (err.error?.message) return err.error.message;
+    if (err.message) {
+      if (err.message === '{}' || err.message === 'Internal Server Error' || err.message.includes('Database error')) {
+        return 'Database or SMTP Configuration Error: Please ensure you ran 001_initial_schema.sql on Supabase and configured your Auth settings.';
+      }
+      return err.message;
+    }
+    const str = JSON.stringify(err);
+    if (str === '{}') {
+      return 'Connection/Database Error: Ensure you have run your Supabase initial schema and your internet connection is active.';
+    }
+    return str;
+  };
+
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -26,7 +45,7 @@ export function LoginPage() {
       setOtpType('email');
       setMode('otp');
     } catch (err: any) {
-      setError(err.message || 'Failed to send OTP');
+      setError(getErrorMessage(err, 'Failed to send OTP'));
     } finally {
       setIsLoading(false);
     }
@@ -41,7 +60,7 @@ export function LoginPage() {
       setOtpType('phone');
       setMode('otp');
     } catch (err: any) {
-      setError(err.message || 'Failed to send OTP');
+      setError(getErrorMessage(err, 'Failed to send OTP'));
     } finally {
       setIsLoading(false);
     }
@@ -54,7 +73,7 @@ export function LoginPage() {
     try {
       await verifyOtp(otp, otpType);
     } catch (err: any) {
-      setError(err.message || 'Invalid OTP');
+      setError(getErrorMessage(err, 'Invalid OTP'));
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +85,7 @@ export function LoginPage() {
     try {
       await signInWithGoogle();
     } catch (err: any) {
-      setError(err.message || 'Google login failed');
+      setError(getErrorMessage(err, 'Google login failed'));
       setIsLoading(false);
     }
   };
