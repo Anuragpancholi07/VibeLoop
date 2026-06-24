@@ -10,6 +10,7 @@ const ExplorePage = lazy(() => import('@/features/events/pages/ExplorePage').the
 const EventDetailPage = lazy(() => import('@/features/events/pages/EventDetailPage').then(m => ({ default: m.EventDetailPage })));
 const CreateEventPage = lazy(() => import('@/features/events/pages/CreateEventPage').then(m => ({ default: m.CreateEventPage })));
 const LoginPage = lazy(() => import('@/features/auth/pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const AuthCallback = lazy(() => import('@/features/auth/pages/AuthCallback').then(m => ({ default: m.AuthCallback })));
 const OnboardingPage = lazy(() => import('@/features/auth/pages/OnboardingPage').then(m => ({ default: m.OnboardingPage })));
 const ProfilePage = lazy(() => import('@/features/profile/pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const ProfileEditPage = lazy(() => import('@/features/profile/pages/ProfileEditPage').then(m => ({ default: m.ProfileEditPage })));
@@ -41,7 +42,7 @@ const router = createBrowserRouter([
 
       // Auth routes
       { path: '/auth/login', element: <SuspenseWrapper><GuestRoute><LoginPage /></GuestRoute></SuspenseWrapper> },
-      { path: '/auth/callback', element: <Navigate to="/" replace /> },
+      { path: '/auth/callback', element: <SuspenseWrapper><AuthCallback /></SuspenseWrapper> },
 
       // Protected routes
       { path: '/onboarding', element: <SuspenseWrapper><ProtectedRoute><OnboardingPage /></ProtectedRoute></SuspenseWrapper> },
