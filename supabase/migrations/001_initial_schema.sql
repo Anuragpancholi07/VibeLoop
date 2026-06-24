@@ -38,6 +38,8 @@ DROP TABLE IF EXISTS event_categories CASCADE;
 DROP TABLE IF EXISTS host_verifications CASCADE;
 DROP TABLE IF EXISTS profiles CASCADE;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
 DROP TYPE IF EXISTS user_role CASCADE;
 DROP TYPE IF EXISTS event_type CASCADE;
 DROP TYPE IF EXISTS event_status CASCADE;
