@@ -1,0 +1,28 @@
+{
+  "name": "VibeLoop",
+  "short_name": "VibeLoop",
+  "description": "Discover amazing events, build communities, and make real connections near you.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0F",
+  "theme_color": "#7C3AED",
+  "orientation": "portrait",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["social", "events", "lifestyle"],
+  "prefer_related_applications": false,
+  "screenshots": []
+}
