@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
@@ -11,6 +11,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils';
 import { PageLoader } from '@/components/common';
 import { EventCard } from '@/features/events/components/EventCard';
+import { useRazorpay, PaymentStatusModal } from '@/features/payments/RazorpayPayment';
 import type { Event, Review, EventAttendee } from '@/types';
 
 export function EventDetailPage() {
@@ -26,6 +27,12 @@ export function EventDetailPage() {
   const [isSaved, setIsSaved] = useState(false);
   const [attendeeStatus, setAttendeeStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees'>('about');
+
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { initiatePayment, isProcessing, paymentStatus } = useRazorpay();
+  const [ticketId, setTicketId] = useState<string | undefined>(undefined);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (id) loadEvent();
@@ -100,18 +107,35 @@ export function EventDetailPage() {
   };
 
   const handleJoin = async () => {
-    if (!isAuthenticated || !event || !user) return;
+    if (!isAuthenticated) {
+      navigate('/auth/login', { state: { from: location } });
+      return;
+    }
+    if (!event || !user) return;
     setIsJoining(true);
     try {
-      if (event.is_free || event.approval_type === 'instant') {
+      if (event.is_free) {
         await supabase.from('event_attendees').insert({
           event_id: event.id,
           user_id: user.id,
           status: event.approval_type === 'instant' ? 'approved' : 'pending',
         });
         setAttendeeStatus(event.approval_type === 'instant' ? 'approved' : 'pending');
+        loadEvent(); // Reload list of attendees
+      } else {
+        // Paid event - run Razorpay checkout
+        try {
+          const tId = await initiatePayment(event.id, event.ticket_price);
+          setTicketId(tId);
+          setShowPaymentModal(true);
+          setAttendeeStatus('approved');
+        } catch (err: any) {
+          console.error('Payment failed/cancelled:', err);
+          if (err.message !== 'Payment cancelled') {
+            setShowPaymentModal(true);
+          }
+        }
       }
-      // For paid events, redirect to payment flow
     } catch (error) {
       console.error('Error joining event:', error);
     } finally {
@@ -447,15 +471,26 @@ export function EventDetailPage() {
           ) : (
             <button
               onClick={handleJoin}
-              disabled={isJoining || !isAuthenticated}
+              disabled={isJoining || isProcessing}
               className="px-8 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-primary/25"
             >
-              {isJoining && <Loader2 className="w-4 h-4 animate-spin" />}
+              {(isJoining || isProcessing) && <Loader2 className="w-4 h-4 animate-spin" />}
               {t('events.join')}
             </button>
           )}
         </div>
       </div>
+
+      {showPaymentModal && (
+        <PaymentStatusModal
+          status={paymentStatus === 'success' ? 'success' : 'failed'}
+          ticketId={ticketId}
+          onClose={() => {
+            setShowPaymentModal(false);
+            loadEvent();
+          }}
+        />
+      )}
     </div>
   );
 }
