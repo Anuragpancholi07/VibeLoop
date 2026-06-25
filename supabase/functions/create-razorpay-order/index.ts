@@ -58,8 +58,18 @@ serve(async (req) => {
       });
     }
 
-    // Check capacity
-    if (event.max_attendees && event.current_attendees >= event.max_attendees) {
+    // Check if user is already approved (e.g. promoted from waitlist or pre-approved by host)
+    const { data: attendee, error: attendeeError } = await supabase
+      .from('event_attendees')
+      .select('status')
+      .eq('event_id', event_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const isAlreadyApproved = attendee && attendee.status === 'approved';
+
+    // Check capacity (bypass if already approved)
+    if (!isAlreadyApproved && event.max_attendees && event.current_attendees >= event.max_attendees) {
       return new Response(JSON.stringify({ error: 'Event is full' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
