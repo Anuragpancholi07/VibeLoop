@@ -1,8 +1,10 @@
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell, Search } from 'lucide-react';
 import { ThemeSwitcher } from '@/themes';
 import { useAuth } from '@/features/auth/AuthContext';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
 interface HeaderProps {
   title?: string;
@@ -12,8 +14,54 @@ interface HeaderProps {
 }
 
 export function Header({ title, showSearch = true, className }: HeaderProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const fetchUnreadCount = async () => {
+      try {
+        const { count, error } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('is_read', false);
+
+        if (!error && count !== null) {
+          setUnreadCount(count);
+        }
+      } catch (err) {
+        console.error('Error fetching unread notifications count:', err);
+      }
+    };
+
+    fetchUnreadCount();
+
+    const channel = supabase
+      .channel(`header-notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchUnreadCount();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated, user]);
 
   return (
     <header className={cn('sticky top-0 z-40 glass-strong safe-top border-b border-border/50', className)}>
@@ -58,8 +106,12 @@ export function Header({ title, showSearch = true, className }: HeaderProps) {
               aria-label="Notifications"
             >
               <Bell className="w-5 h-5 text-foreground" />
-              {/* Unread indicator */}
-              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-destructive" />
+              {/* Unread count badge */}
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1.5 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center border-2 border-background shadow-md">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </Link>
           )}
 
@@ -69,3 +121,4 @@ export function Header({ title, showSearch = true, className }: HeaderProps) {
     </header>
   );
 }
+
