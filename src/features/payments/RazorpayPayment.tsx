@@ -152,6 +152,8 @@ export function useRazorpay() {
 // CheckoutModal Component
 interface CheckoutModalProps {
   event: Event;
+  attendeeStatus: string | null;
+  hasTicket: boolean;
   onClose: () => void;
   onSuccess: (ticketId: string) => void;
 }
@@ -159,7 +161,7 @@ interface CheckoutModalProps {
 type CheckoutStep = 'summary' | 'payment' | 'processing' | 'success' | 'failed';
 type PaymentMethod = 'upi' | 'card' | 'netbanking' | 'demo';
 
-export function CheckoutModal({ event, onClose, onSuccess }: CheckoutModalProps) {
+export function CheckoutModal({ event, attendeeStatus, hasTicket, onClose, onSuccess }: CheckoutModalProps) {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<CheckoutStep>('summary');
@@ -463,7 +465,7 @@ export function CheckoutModal({ event, onClose, onSuccess }: CheckoutModalProps)
                   </div>
                 )}
 
-                {event.approval_type === 'host_approval' && (
+                {event.approval_type === 'host_approval' && attendeeStatus !== 'approved' && (
                   <div className="flex items-start gap-2 p-3 rounded-xl bg-warning/10 border border-warning/20">
                     <Shield className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-warning">This event requires host approval. Your request will be sent to the host.</p>
@@ -471,14 +473,16 @@ export function CheckoutModal({ event, onClose, onSuccess }: CheckoutModalProps)
                 )}
 
                 <button
-                  onClick={event.is_free ? handleFreeJoin : () => setStep('payment')}
+                  onClick={(event.is_free || (event.approval_type === 'host_approval' && attendeeStatus !== 'approved')) ? handleFreeJoin : () => setStep('payment')}
                   disabled={isProcessing}
                   className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center justify-center gap-2 shadow-lg shadow-primary/25 hover:opacity-90 transition-opacity disabled:opacity-50 text-base"
                 >
-                  {event.is_free ? (
+                  {(event.is_free || (event.approval_type === 'host_approval' && attendeeStatus !== 'approved')) ? (
                     <>
                       <Ticket className="w-5 h-5" />
-                      Confirm &amp; Get Ticket
+                      {event.approval_type === 'host_approval' && attendeeStatus !== 'approved' 
+                        ? 'Submit Join Request' 
+                        : 'Confirm & Get Ticket'}
                     </>
                   ) : (
                     <>
@@ -593,12 +597,12 @@ export function CheckoutModal({ event, onClose, onSuccess }: CheckoutModalProps)
 
                 <div>
                   <h3 className="text-xl font-bold mb-2">
-                    {event.approval_type === 'host_approval' && event.is_free
+                    {event.approval_type === 'host_approval' && attendeeStatus !== 'approved'
                       ? 'Request Sent!'
                       : "You're All Set!"}
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    {event.approval_type === 'host_approval' && event.is_free
+                    {event.approval_type === 'host_approval' && attendeeStatus !== 'approved'
                       ? "Your join request has been sent to the host. You'll be notified when approved."
                       : 'Your registration is confirmed and your ticket is ready!'}
                   </p>

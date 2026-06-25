@@ -17,7 +17,7 @@ import type { Event, Review, EventAttendee } from '@/types';
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, profile } = useAuth();
   const [event, setEvent] = useState<Event | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
@@ -25,6 +25,7 @@ export function EventDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [attendeeStatus, setAttendeeStatus] = useState<string | null>(null);
+  const [hasTicket, setHasTicket] = useState(false);
   const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees'>('about');
   const [showCheckout, setShowCheckout] = useState(false);
 
@@ -83,6 +84,16 @@ export function EventDetailPage() {
             .eq('user_id', user.id)
             .maybeSingle();
           setAttendeeStatus(attendeeData?.status || null);
+
+          // Check if active ticket exists
+          const { data: ticketData } = await supabase
+            .from('event_tickets')
+            .select('id')
+            .eq('event_id', id)
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .maybeSingle();
+          setHasTicket(!!ticketData);
         }
 
         // Similar events
@@ -109,6 +120,40 @@ export function EventDetailPage() {
       navigate('/auth/login', { state: { from: location } });
       return;
     }
+
+    if (event) {
+      // 1. Gender Validation
+      if (event.gender_restriction === 'male_only' && profile?.gender !== 'male') {
+        alert('This event is restricted to male participants only.');
+        return;
+      }
+      if (event.gender_restriction === 'female_only' && profile?.gender !== 'female') {
+        alert('This event is restricted to female participants only.');
+        return;
+      }
+
+      // 2. Age Validation
+      if (profile?.date_of_birth) {
+        const birthDate = new Date(profile.date_of_birth);
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          age--;
+        }
+        
+        if (age < event.min_age || age > event.max_age) {
+          alert(`You must be between ${event.min_age} and ${event.max_age} years old to join this event.`);
+          return;
+        }
+      } else {
+        if (event.min_age > 18 || event.max_age < 99) {
+          alert('Please complete your profile details (date of birth) to join this event.');
+          return;
+        }
+      }
+    }
+
     setShowCheckout(true);
   };
 
@@ -163,20 +208,34 @@ export function EventDetailPage() {
       );
     }
 
-    if (attendeeStatus === 'approved') {
-      return (
-        <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-success/10 text-success font-medium">
-          <CheckCircle2 className="w-5 h-5" />
-          {t('events.joined')}
-        </div>
-      );
-    }
+    const needsApproval = event.approval_type === 'host_approval';
 
     if (attendeeStatus === 'pending') {
       return (
         <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-warning/10 text-warning font-medium">
           <Clock className="w-5 h-5" />
           {t('events.pendingApproval')}
+        </div>
+      );
+    }
+
+    if (attendeeStatus === 'approved') {
+      if (!event.is_free && !hasTicket) {
+        return (
+          <button
+            onClick={handleJoinClick}
+            className="px-8 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-lg shadow-primary/25"
+          >
+            <Ticket className="w-4 h-4" />
+            Buy Ticket
+          </button>
+        );
+      }
+
+      return (
+        <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-success/10 text-success font-medium">
+          <CheckCircle2 className="w-5 h-5" />
+          {t('events.joined')}
         </div>
       );
     }
@@ -199,7 +258,7 @@ export function EventDetailPage() {
           className="px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-lg shadow-primary/25"
         >
           <LogIn className="w-4 h-4" />
-          {event.is_free ? 'Join Free' : `Buy Ticket`}
+          {needsApproval ? 'Request to Join' : (event.is_free ? 'Join Free' : 'Buy Ticket')}
         </button>
       );
     }
@@ -210,7 +269,7 @@ export function EventDetailPage() {
         className="px-8 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-lg shadow-primary/25"
       >
         <Ticket className="w-4 h-4" />
-        {event.is_free ? t('events.join') : `Buy Ticket`}
+        {needsApproval ? 'Request to Join' : (event.is_free ? t('events.join') : 'Buy Ticket')}
       </button>
     );
   };
@@ -507,6 +566,8 @@ export function EventDetailPage() {
       {showCheckout && event && (
         <CheckoutModal
           event={event}
+          attendeeStatus={attendeeStatus}
+          hasTicket={hasTicket}
           onClose={() => setShowCheckout(false)}
           onSuccess={handleCheckoutSuccess}
         />
