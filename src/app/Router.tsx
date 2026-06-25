@@ -46,7 +46,7 @@ const router = createBrowserRouter([
 
       // Protected routes
       { path: '/onboarding', element: <SuspenseWrapper><ProtectedRoute><OnboardingPage /></ProtectedRoute></SuspenseWrapper> },
-      { path: '/create-event', element: <SuspenseWrapper><ProtectedRoute roles={['host', 'admin']}><CreateEventPage /></ProtectedRoute></SuspenseWrapper> },
+      { path: '/create-event', element: <SuspenseWrapper><ProtectedRoute><CreateEventPage /></ProtectedRoute></SuspenseWrapper> },
       { path: '/profile', element: <SuspenseWrapper><ProtectedRoute><ProfilePage /></ProtectedRoute></SuspenseWrapper> },
       { path: '/profile/edit', element: <SuspenseWrapper><ProtectedRoute><ProfileEditPage /></ProtectedRoute></SuspenseWrapper> },
       { path: '/profile/:id', element: <SuspenseWrapper><ProfilePage /></SuspenseWrapper> },
@@ -55,7 +55,7 @@ const router = createBrowserRouter([
       { path: '/communities', element: <SuspenseWrapper><CommunitiesListPage /></SuspenseWrapper> },
       { path: '/communities/:id', element: <SuspenseWrapper><CommunityDetailPage /></SuspenseWrapper> },
       { path: '/tickets', element: <SuspenseWrapper><ProtectedRoute><TicketsPage /></ProtectedRoute></SuspenseWrapper> },
-      { path: '/scan', element: <SuspenseWrapper><ProtectedRoute roles={['host', 'admin']}><ScanPage /></ProtectedRoute></SuspenseWrapper> },
+      { path: '/scan', element: <SuspenseWrapper><ProtectedRoute><ScanPage /></ProtectedRoute></SuspenseWrapper> },
       { path: '/notifications', element: <SuspenseWrapper><ProtectedRoute><NotificationsPage /></ProtectedRoute></SuspenseWrapper> },
       { path: '/saved', element: <SuspenseWrapper><ProtectedRoute><SavedEventsPage /></ProtectedRoute></SuspenseWrapper> },
 

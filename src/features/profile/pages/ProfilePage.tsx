@@ -13,7 +13,7 @@ import type { Profile, Event } from '@/types';
 export function ProfilePage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
-  const { user, profile: myProfile, signOut, updateProfile } = useAuth();
+  const { user, profile: myProfile, signOut } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [hostedEvents, setHostedEvents] = useState<Event[]>([]);
   const [attendingEvents, setAttendingEvents] = useState<Event[]>([]);
@@ -127,21 +127,6 @@ export function ProfilePage() {
               <Link to="/profile/edit" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-secondary border border-border text-sm font-medium hover:bg-secondary/80 transition-colors">
                 <Edit3 className="w-4 h-4" /> {t('profile.editProfile')}
               </Link>
-              {profile?.role === 'user' && (
-                <button
-                  onClick={async () => {
-                    try {
-                      await updateProfile({ role: 'host' });
-                      setProfile(prev => prev ? { ...prev, role: 'host' } : null);
-                    } catch (error) {
-                      console.error('Failed to update role to host:', error);
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shadow-lg shadow-primary/25"
-                >
-                  <Shield className="w-4 h-4" /> {t('profile.becomeHost')}
-                </button>
-              )}
               <button onClick={signOut} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive/10 text-destructive text-sm font-medium hover:bg-destructive/20 transition-colors">
                 <LogOut className="w-4 h-4" /> {t('auth.logout')}
               </button>
