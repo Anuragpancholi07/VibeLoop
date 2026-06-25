@@ -30,6 +30,79 @@ export function CreateEventPage() {
   });
   const [newRule, setNewRule] = useState('');
 
+  // Custom Category states
+  const [isOtherSelected, setIsOtherSelected] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+
+  const handleCreateCustomCategory = async () => {
+    const trimmed = customCategoryName.trim();
+    if (!trimmed) return;
+
+    setIsCreatingCategory(true);
+    try {
+      // Check if category already exists in local loaded list (case-insensitive)
+      const existing = categories.find(
+        (cat) => cat.name.toLowerCase() === trimmed.toLowerCase()
+      );
+
+      if (existing) {
+        updateForm('category_id', existing.id);
+        setIsOtherSelected(false);
+        setCustomCategoryName('');
+        alert('This category already exists. It has been selected for you.');
+        return;
+      }
+
+      const slug = slugify(trimmed);
+      const { data, error: insertError } = await supabase
+        .from('event_categories')
+        .insert({
+          name: trimmed,
+          slug,
+          icon: '✨',
+          color: 'from-purple-500 to-indigo-500',
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        if (insertError.code === '23505') {
+          const { data: existingCat, error: fetchError } = await supabase
+            .from('event_categories')
+            .select('*')
+            .ilike('name', trimmed)
+            .single();
+
+          if (!fetchError && existingCat) {
+            const cat = existingCat as EventCategory;
+            setCategories((prev) => [...prev, cat]);
+            updateForm('category_id', cat.id);
+            setIsOtherSelected(false);
+            setCustomCategoryName('');
+            return;
+          }
+        }
+        throw insertError;
+      }
+
+      if (data) {
+        const newCat = data as EventCategory;
+        setCategories((prev) => [...prev, newCat]);
+        updateForm('category_id', newCat.id);
+        setIsOtherSelected(false);
+        setCustomCategoryName('');
+      }
+    } catch (err: any) {
+      console.error('Error creating custom category:', err);
+      alert(err.message || 'Failed to create category. Please try again.');
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  };
+
+
   // Image upload states
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string>('');
@@ -353,12 +426,56 @@ export function CreateEventPage() {
         <label className="text-sm font-medium mb-1.5 block">{t('createEvent.selectCategory')} *</label>
         <div className="flex flex-wrap gap-2">
           {categories.map((cat) => (
-            <button key={cat.id} onClick={() => updateForm('category_id', cat.id)} className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${form.category_id === cat.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 border border-border'}`}>
+            <button 
+              key={cat.id} 
+              type="button"
+              onClick={() => {
+                updateForm('category_id', cat.id);
+                setIsOtherSelected(false);
+              }} 
+              className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${form.category_id === cat.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 border border-border'}`}
+            >
               {cat.icon} {cat.name}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setIsOtherSelected(true);
+              updateForm('category_id', '');
+            }}
+            className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${isOtherSelected ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 border border-border'}`}
+          >
+            ✨ Other
+          </button>
         </div>
+
+        {isOtherSelected && (
+          <div className="mt-3 flex gap-2">
+            <input
+              type="text"
+              value={customCategoryName}
+              onChange={(e) => setCustomCategoryName(e.target.value)}
+              placeholder="Enter custom category name..."
+              className="flex-1 px-4 py-2.5 rounded-xl bg-secondary/50 border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+            <button
+              type="button"
+              onClick={handleCreateCustomCategory}
+              disabled={isCreatingCategory || !customCategoryName.trim()}
+              className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center gap-1.5 shadow-md shadow-primary/25 hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {isCreatingCategory ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              Add
+            </button>
+          </div>
+        )}
       </div>
+
       <div>
         <label className="text-sm font-medium mb-1 block">{t('createEvent.bannerImage')} *</label>
         <div 
