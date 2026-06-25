@@ -17,6 +17,7 @@ export function CreateEventPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const [categories, setCategories] = useState<EventCategory[]>([]);
   const [form, setForm] = useState({
     title: '', subtitle: '', description: '', category_id: '',
@@ -50,6 +51,7 @@ export function CreateEventPage() {
   const handlePublish = async () => {
     if (!user) return;
     setIsSubmitting(true);
+    setError('');
     try {
       const eventData = {
         host_id: user.id,
@@ -80,11 +82,12 @@ export function CreateEventPage() {
         rules: form.rules,
       };
 
-      const { data, error } = await supabase.from('events').insert(eventData).select().single();
-      if (error) throw error;
+      const { data, error: insertError } = await supabase.from('events').insert(eventData).select().single();
+      if (insertError) throw insertError;
       navigate(`/events/${data.id}`);
-    } catch (error) {
-      console.error('Error creating event:', error);
+    } catch (err: any) {
+      console.error('Error creating event:', err);
+      setError(err.message || 'Failed to publish event. Please check your inputs.');
     } finally {
       setIsSubmitting(false);
     }
@@ -288,6 +291,12 @@ export function CreateEventPage() {
       <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.2 }}>
         {stepContent[step]}
       </motion.div>
+
+      {error && (
+        <div className="mt-4 p-3 rounded-xl bg-destructive/10 text-destructive text-sm font-medium border border-destructive/20 text-center">
+          {error}
+        </div>
+      )}
 
       {/* Navigation */}
       <div className="flex justify-between mt-8 pb-4">
