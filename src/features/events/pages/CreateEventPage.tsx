@@ -56,9 +56,19 @@ export function CreateEventPage() {
       // Validate required fields first
       if (!form.title.trim()) throw new Error('Please add an event title');
       if (!form.event_date) throw new Error('Please select an event date');
-      if (!form.start_time) throw new Error('Please set a start time');
-      if (!form.end_time) throw new Error('Please set an end time');
-      if (form.start_time >= form.end_time) throw new Error('End time must be after start time');
+      if (!form.start_time) throw new Error('Please set a start time — go to Step 2 (Type & Schedule)');
+      if (!form.end_time) throw new Error('Please set an end time — go to Step 2 (Type & Schedule)');
+
+      // Build proper ISO timestamp strings — handle both HH:MM and HH:MM:SS from browser
+      const toIso = (date: string, time: string) => {
+        const d = new Date(`${date}T${time}`);
+        if (isNaN(d.getTime())) throw new Error(`Invalid date/time: ${date} ${time}`);
+        return d.toISOString();
+      };
+      const startIso = toIso(form.event_date, form.start_time);
+      const endIso = toIso(form.event_date, form.end_time);
+      if (new Date(endIso) <= new Date(startIso)) throw new Error('End time must be after start time');
+
       if (!form.is_free && (!form.ticket_price || parseFloat(form.ticket_price) <= 0)) {
         throw new Error('Please set a valid ticket price for paid events');
       }
@@ -73,8 +83,8 @@ export function CreateEventPage() {
         event_type: form.event_type,
         status: 'published',
         event_date: form.event_date,
-        start_time: `${form.event_date}T${form.start_time}:00`,
-        end_time: `${form.event_date}T${form.end_time}:00`,
+        start_time: startIso,
+        end_time: endIso,
         address: form.address || null,
         city: form.city || null,
         latitude: form.latitude || null,
@@ -94,9 +104,12 @@ export function CreateEventPage() {
 
       const { data, error: insertError } = await supabase.from('events').insert(eventData).select().single();
       if (insertError) {
-        // Give a helpful message for RLS/permission errors
+        // Give human-readable messages for common DB errors
         if (insertError.code === '42501' || insertError.message?.includes('policy') || insertError.message?.includes('permission')) {
-          throw new Error('You need to be signed in to create an event. Please log in and try again.');
+          throw new Error('Permission denied. Please make sure you are signed in and try again.');
+        }
+        if (insertError.message?.includes('check_event_dates') || insertError.message?.includes('check constraint')) {
+          throw new Error('End time must be after start time. Please go back to Step 2 and fix the times.');
         }
         throw insertError;
       }
