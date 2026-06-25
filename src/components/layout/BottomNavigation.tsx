@@ -16,8 +16,14 @@ export function BottomNavigation() {
   const { t } = useTranslation();
   const location = useLocation();
 
-  // Hide on admin and auth routes
-  if (location.pathname.startsWith('/admin') || location.pathname.startsWith('/auth')) {
+  // Hide on admin, auth, event detail, and chat detail routes
+  const isHiddenRoute =
+    location.pathname.startsWith('/admin') ||
+    location.pathname.startsWith('/auth') ||
+    location.pathname.includes('/events/') ||
+    location.pathname.match(/\/chat\/.+/);
+
+  if (isHiddenRoute) {
     return null;
   }
 
