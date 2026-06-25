@@ -286,6 +286,15 @@ export function EventDetailPage() {
 
       if (attendeeError) throw attendeeError;
 
+      // 1.5 Increment max_attendees if event has a limit
+      if (event.max_attendees !== null) {
+        const { error: maxError } = await supabase
+          .from('events')
+          .update({ max_attendees: event.max_attendees + 1 })
+          .eq('id', event.id);
+        if (maxError) throw maxError;
+      }
+
       // 2. Generate ticket if event is free
       if (event.is_free) {
         const ticketNumber = 'VL-' + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -636,8 +645,15 @@ export function EventDetailPage() {
               <Users className="w-5 h-5 text-info" />
             </div>
             <div>
-              <p className="text-sm font-medium">
-                {event.current_attendees}{event.max_attendees ? ` / ${event.max_attendees}` : ''} attending
+              <p className="text-sm font-medium flex items-center gap-2">
+                <span>
+                  {event.current_attendees}{event.max_attendees ? ` / ${event.max_attendees}` : ''} attending
+                </span>
+                {event.waitlist_enabled && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-warning/10 text-warning uppercase tracking-wider">
+                    Waitlist Active
+                  </span>
+                )}
               </p>
               {slotsLeft !== null && slotsLeft > 0 && (
                 <p className="text-xs text-muted-foreground">{t('events.slots', { available: slotsLeft })}</p>
