@@ -3,15 +3,15 @@ import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
-  Calendar, MapPin, Users, Clock, Share2, Bookmark, Flag, ChevronLeft,
-  Star, Shield, Heart, Tag, Info, CheckCircle2, Loader2
+  Calendar, MapPin, Users, Clock, Share2, Bookmark, ChevronLeft,
+  Star, Shield, Tag, Info, CheckCircle2, Loader2, Ticket, LogIn
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils';
 import { PageLoader } from '@/components/common';
 import { EventCard } from '@/features/events/components/EventCard';
-import { useRazorpay, PaymentStatusModal } from '@/features/payments/RazorpayPayment';
+import { CheckoutModal } from '@/features/payments/RazorpayPayment';
 import type { Event, Review, EventAttendee } from '@/types';
 
 export function EventDetailPage() {
@@ -23,20 +23,17 @@ export function EventDetailPage() {
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
   const [similarEvents, setSimilarEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isJoining, setIsJoining] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [attendeeStatus, setAttendeeStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees'>('about');
+  const [showCheckout, setShowCheckout] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
-  const { initiatePayment, isProcessing, paymentStatus } = useRazorpay();
-  const [ticketId, setTicketId] = useState<string | undefined>(undefined);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (id) loadEvent();
-  }, [id]);
+  }, [id, user]);
 
   const loadEvent = async () => {
     setIsLoading(true);
@@ -68,8 +65,8 @@ export function EventDetailPage() {
           .limit(20);
         setAttendees((attendeesData || []) as EventAttendee[]);
 
-        // Check saved status
         if (user) {
+          // Check saved status
           const { data: savedData } = await supabase
             .from('saved_events')
             .select('id')
@@ -78,6 +75,7 @@ export function EventDetailPage() {
             .maybeSingle();
           setIsSaved(!!savedData);
 
+          // Check attendee status
           const { data: attendeeData } = await supabase
             .from('event_attendees')
             .select('status')
@@ -106,41 +104,17 @@ export function EventDetailPage() {
     }
   };
 
-  const handleJoin = async () => {
+  const handleJoinClick = () => {
     if (!isAuthenticated) {
       navigate('/auth/login', { state: { from: location } });
       return;
     }
-    if (!event || !user) return;
-    setIsJoining(true);
-    try {
-      if (event.is_free) {
-        await supabase.from('event_attendees').insert({
-          event_id: event.id,
-          user_id: user.id,
-          status: event.approval_type === 'instant' ? 'approved' : 'pending',
-        });
-        setAttendeeStatus(event.approval_type === 'instant' ? 'approved' : 'pending');
-        loadEvent(); // Reload list of attendees
-      } else {
-        // Paid event - run Razorpay checkout
-        try {
-          const tId = await initiatePayment(event.id, event.ticket_price);
-          setTicketId(tId);
-          setShowPaymentModal(true);
-          setAttendeeStatus('approved');
-        } catch (err: any) {
-          console.error('Payment failed/cancelled:', err);
-          if (err.message !== 'Payment cancelled') {
-            setShowPaymentModal(true);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error joining event:', error);
-    } finally {
-      setIsJoining(false);
-    }
+    setShowCheckout(true);
+  };
+
+  const handleCheckoutSuccess = (_ticketId: string) => {
+    // Reload to show updated attendee status
+    loadEvent();
   };
 
   const handleSave = async () => {
@@ -161,17 +135,88 @@ export function EventDetailPage() {
         text: event.subtitle || event.description || '',
         url: window.location.href,
       });
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard?.writeText(window.location.href);
     }
   };
 
   if (isLoading) return <PageLoader />;
-  if (!event) return <div className="p-4 text-center text-muted-foreground">Event not found</div>;
+  if (!event) return (
+    <div className="p-8 text-center">
+      <p className="text-muted-foreground">Event not found</p>
+      <Link to="/" className="mt-4 inline-block text-primary text-sm font-medium">Go Home</Link>
+    </div>
+  );
 
   const slotsLeft = event.max_attendees ? event.max_attendees - event.current_attendees : null;
   const isSoldOut = slotsLeft !== null && slotsLeft <= 0;
+  const isHost = user?.id === event.host_id;
+
+  const getJoinButtonContent = () => {
+    if (isHost) {
+      return (
+        <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-secondary border border-border text-muted-foreground font-medium text-sm">
+          <Shield className="w-4 h-4" />
+          Your Event
+        </div>
+      );
+    }
+
+    if (attendeeStatus === 'approved') {
+      return (
+        <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-success/10 text-success font-medium">
+          <CheckCircle2 className="w-5 h-5" />
+          {t('events.joined')}
+        </div>
+      );
+    }
+
+    if (attendeeStatus === 'pending') {
+      return (
+        <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-warning/10 text-warning font-medium">
+          <Clock className="w-5 h-5" />
+          {t('events.pendingApproval')}
+        </div>
+      );
+    }
+
+    if (isSoldOut) {
+      return (
+        <button
+          disabled
+          className="px-6 py-3 rounded-xl bg-muted text-muted-foreground font-medium"
+        >
+          {event.waitlist_enabled ? t('events.waitlist') : t('events.soldOut')}
+        </button>
+      );
+    }
+
+    if (!isAuthenticated) {
+      return (
+        <button
+          onClick={handleJoinClick}
+          className="px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-lg shadow-primary/25"
+        >
+          <LogIn className="w-4 h-4" />
+          {event.is_free ? 'Join Free' : `Buy Ticket`}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        onClick={handleJoinClick}
+        className="px-8 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-lg shadow-primary/25"
+      >
+        <Ticket className="w-4 h-4" />
+        {event.is_free ? t('events.join') : `Buy Ticket`}
+      </button>
+    );
+  };
 
   return (
-    <div className="pb-24">
+    <div className="pb-28">
       {/* Banner */}
       <div className="relative aspect-video sm:aspect-[21/9] bg-secondary overflow-hidden">
         {event.banner_url ? (
@@ -184,12 +229,12 @@ export function EventDetailPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
 
         {/* Back button */}
-        <Link
-          to="/"
+        <button
+          onClick={() => navigate(-1)}
           className="absolute top-4 left-4 w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/60 transition-colors"
         >
           <ChevronLeft className="w-5 h-5" />
-        </Link>
+        </button>
 
         {/* Action buttons */}
         <div className="absolute top-4 right-4 flex gap-2">
@@ -207,8 +252,8 @@ export function EventDetailPage() {
           </button>
         </div>
 
-        {/* Category + price badges */}
-        <div className="absolute bottom-4 left-4 flex gap-2">
+        {/* Badges */}
+        <div className="absolute bottom-4 left-4 flex gap-2 flex-wrap">
           {event.category && (
             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-black/40 text-white backdrop-blur-sm">
               {event.category.icon} {event.category.name}
@@ -289,9 +334,7 @@ export function EventDetailPage() {
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <p className="text-sm font-semibold">{event.host.full_name}</p>
-                {event.host.is_verified_host && (
-                  <Shield className="w-4 h-4 text-primary" />
-                )}
+                {event.host.is_verified_host && <Shield className="w-4 h-4 text-primary" />}
               </div>
               <p className="text-xs text-muted-foreground">Host • {event.host.events_hosted} events</p>
             </div>
@@ -349,10 +392,12 @@ export function EventDetailPage() {
 
               {(event.gender_restriction !== 'anyone' || event.min_age > 18 || event.max_age < 99) && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-2">Restrictions</h3>
+                  <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-primary" /> Restrictions
+                  </h3>
                   <div className="flex flex-wrap gap-2">
                     {event.gender_restriction !== 'anyone' && (
-                      <span className="px-3 py-1 rounded-full text-xs bg-secondary border border-border">
+                      <span className="px-3 py-1 rounded-full text-xs bg-secondary border border-border capitalize">
                         {event.gender_restriction.replace(/_/g, ' ')}
                       </span>
                     )}
@@ -419,7 +464,7 @@ export function EventDetailPage() {
                 </Link>
               ))}
               {attendees.length === 0 && (
-                <p className="col-span-full text-center text-sm text-muted-foreground py-8">No attendees yet</p>
+                <p className="col-span-full text-center text-sm text-muted-foreground py-8">Be the first to join!</p>
               )}
             </div>
           )}
@@ -439,7 +484,7 @@ export function EventDetailPage() {
       </div>
 
       {/* Fixed Bottom CTA */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 glass-strong safe-bottom border-t border-border/50 p-4">
+      <div className="fixed bottom-0 left-0 right-0 z-40 glass-strong safe-bottom border-t border-border/50 p-4">
         <div className="max-w-lg mx-auto flex items-center gap-3">
           <div className="flex-1">
             {!event.is_free && (
@@ -448,47 +493,22 @@ export function EventDetailPage() {
                 <span className="text-xs text-muted-foreground font-normal ml-1">{t('events.perPerson')}</span>
               </p>
             )}
-            {event.is_free && <p className="text-lg font-bold text-success">Free</p>}
+            {event.is_free && <p className="text-lg font-bold text-success">Free Entry</p>}
+            {slotsLeft !== null && slotsLeft > 0 && slotsLeft <= 5 && (
+              <p className="text-xs text-destructive font-medium">Only {slotsLeft} spots left!</p>
+            )}
           </div>
 
-          {attendeeStatus === 'approved' ? (
-            <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-success/10 text-success font-medium">
-              <CheckCircle2 className="w-5 h-5" />
-              {t('events.joined')}
-            </div>
-          ) : attendeeStatus === 'pending' ? (
-            <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-warning/10 text-warning font-medium">
-              <Clock className="w-5 h-5" />
-              {t('events.pendingApproval')}
-            </div>
-          ) : isSoldOut ? (
-            <button
-              disabled
-              className="px-6 py-3 rounded-xl bg-muted text-muted-foreground font-medium"
-            >
-              {event.waitlist_enabled ? t('events.waitlist') : t('events.soldOut')}
-            </button>
-          ) : (
-            <button
-              onClick={handleJoin}
-              disabled={isJoining || isProcessing}
-              className="px-8 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-primary/25"
-            >
-              {(isJoining || isProcessing) && <Loader2 className="w-4 h-4 animate-spin" />}
-              {t('events.join')}
-            </button>
-          )}
+          {getJoinButtonContent()}
         </div>
       </div>
 
-      {showPaymentModal && (
-        <PaymentStatusModal
-          status={paymentStatus === 'success' ? 'success' : 'failed'}
-          ticketId={ticketId}
-          onClose={() => {
-            setShowPaymentModal(false);
-            loadEvent();
-          }}
+      {/* Checkout Modal */}
+      {showCheckout && event && (
+        <CheckoutModal
+          event={event}
+          onClose={() => setShowCheckout(false)}
+          onSuccess={handleCheckoutSuccess}
         />
       )}
     </div>

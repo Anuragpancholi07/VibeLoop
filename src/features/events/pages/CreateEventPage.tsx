@@ -53,9 +53,19 @@ export function CreateEventPage() {
     setIsSubmitting(true);
     setError('');
     try {
+      // Validate required fields first
+      if (!form.title.trim()) throw new Error('Please add an event title');
+      if (!form.event_date) throw new Error('Please select an event date');
+      if (!form.start_time) throw new Error('Please set a start time');
+      if (!form.end_time) throw new Error('Please set an end time');
+      if (form.start_time >= form.end_time) throw new Error('End time must be after start time');
+      if (!form.is_free && (!form.ticket_price || parseFloat(form.ticket_price) <= 0)) {
+        throw new Error('Please set a valid ticket price for paid events');
+      }
+
       const eventData = {
         host_id: user.id,
-        title: form.title,
+        title: form.title.trim(),
         subtitle: form.subtitle || null,
         description: form.description || null,
         slug: slugify(form.title) + '-' + Date.now().toString(36),
@@ -83,11 +93,17 @@ export function CreateEventPage() {
       };
 
       const { data, error: insertError } = await supabase.from('events').insert(eventData).select().single();
-      if (insertError) throw insertError;
+      if (insertError) {
+        // Give a helpful message for RLS/permission errors
+        if (insertError.code === '42501' || insertError.message?.includes('policy') || insertError.message?.includes('permission')) {
+          throw new Error('You need to be signed in to create an event. Please log in and try again.');
+        }
+        throw insertError;
+      }
       navigate(`/events/${data.id}`);
     } catch (err: any) {
       console.error('Error creating event:', err);
-      setError(err.message || 'Failed to publish event. Please check your inputs.');
+      setError(err.message || 'Failed to publish event. Please check your inputs and try again.');
     } finally {
       setIsSubmitting(false);
     }
