@@ -286,3 +286,13 @@ export interface PaginationParams {
   page: number;
   limit: number;
 }
+
+export interface EventWaitlist {
+  id: string;
+  event_id: string;
+  user_id: string;
+  position: number;
+  created_at: string;
+  profile?: Profile;
+}
+

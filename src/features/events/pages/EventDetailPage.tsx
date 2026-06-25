@@ -12,7 +12,7 @@ import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils';
 import { PageLoader } from '@/components/common';
 import { EventCard } from '@/features/events/components/EventCard';
 import { CheckoutModal } from '@/features/payments/RazorpayPayment';
-import type { Event, Review, EventAttendee } from '@/types';
+import type { Event, Review, EventAttendee, EventWaitlist } from '@/types';
 
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +22,7 @@ export function EventDetailPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
   const [pendingAttendees, setPendingAttendees] = useState<EventAttendee[]>([]);
+  const [waitlistQueue, setWaitlistQueue] = useState<EventWaitlist[]>([]);
   const [similarEvents, setSimilarEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
@@ -97,14 +98,24 @@ export function EventDetailPage() {
             .maybeSingle();
           setHasTicket(!!ticketData);
 
-          // Load pending requests if host
-          if (eventData.host_id === user.id && eventData.approval_type === 'host_approval') {
-            const { data: pendingData } = await supabase
-              .from('event_attendees')
-              .select('*, profile:profiles(*)')
-              .eq('event_id', id)
-              .eq('status', 'pending');
-            setPendingAttendees((pendingData || []) as EventAttendee[]);
+          // Load pending requests and waitlist queue if host
+          if (eventData.host_id === user.id) {
+            if (eventData.approval_type === 'host_approval') {
+              const { data: pendingData } = await supabase
+                .from('event_attendees')
+                .select('*, profile:profiles(*)')
+                .eq('event_id', id)
+                .eq('status', 'pending');
+              setPendingAttendees((pendingData || []) as EventAttendee[]);
+            }
+            if (eventData.waitlist_enabled) {
+              const { data: waitlistQueueData } = await supabase
+                .from('event_waitlists')
+                .select('*, profile:profiles(*)')
+                .eq('event_id', id)
+                .order('position', { ascending: true });
+              setWaitlistQueue((waitlistQueueData || []) as EventWaitlist[]);
+            }
           }
 
           // Check if on waitlist
@@ -252,6 +263,108 @@ export function EventDetailPage() {
     } catch (err) {
       console.error('Error rejecting request:', err);
       alert('Failed to reject request');
+    }
+  };
+
+  const handleApproveWaitlist = async (waitlistId: string, waitlistUserId: string) => {
+    if (!event) return;
+    try {
+      // 1. Promote to approved attendee (using upsert in case a record already exists)
+      const { data: attendeeData, error: attendeeError } = await supabase
+        .from('event_attendees')
+        .upsert(
+          {
+            event_id: event.id,
+            user_id: waitlistUserId,
+            status: 'approved',
+            approved_at: new Date().toISOString()
+          },
+          { onConflict: 'event_id,user_id' }
+        )
+        .select('id')
+        .single();
+
+      if (attendeeError) throw attendeeError;
+
+      // 2. Generate ticket if event is free
+      if (event.is_free) {
+        const ticketNumber = 'VL-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        const qrData = `vibeloop:ticket:${ticketNumber}:${event.id}:${waitlistUserId}`;
+        await supabase
+          .from('event_tickets')
+          .insert({
+            user_id: waitlistUserId,
+            event_id: event.id,
+            attendee_id: attendeeData.id,
+            ticket_number: ticketNumber,
+            qr_code_data: qrData,
+            status: 'active',
+          });
+      }
+
+      // 3. Remove waitlist record
+      await supabase
+        .from('event_waitlists')
+        .delete()
+        .eq('id', waitlistId);
+
+      // 4. Reorder remaining waitlist entries
+      const { data: remaining } = await supabase
+        .from('event_waitlists')
+        .select('id')
+        .eq('event_id', event.id)
+        .order('position', { ascending: true });
+
+      if (remaining && remaining.length > 0) {
+        for (let i = 0; i < remaining.length; i++) {
+          await supabase
+            .from('event_waitlists')
+            .update({ position: i + 1 })
+            .eq('id', remaining[i].id);
+        }
+      }
+
+      alert('User successfully promoted from waitlist!');
+      loadEvent();
+    } catch (err) {
+      console.error('Error promoting waitlist user:', err);
+      alert('Failed to promote user from waitlist');
+    }
+  };
+
+  const handleRemoveFromWaitlist = async (waitlistId: string) => {
+    if (!event) return;
+    const confirmRemove = window.confirm('Are you sure you want to remove this user from the waitlist?');
+    if (!confirmRemove) return;
+
+    try {
+      // 1. Remove waitlist record
+      await supabase
+        .from('event_waitlists')
+        .delete()
+        .eq('id', waitlistId);
+
+      // 2. Reorder remaining waitlist entries
+      const { data: remaining } = await supabase
+        .from('event_waitlists')
+        .select('id')
+        .eq('event_id', event.id)
+        .order('position', { ascending: true });
+
+      if (remaining && remaining.length > 0) {
+        for (let i = 0; i < remaining.length; i++) {
+          await supabase
+            .from('event_waitlists')
+            .update({ position: i + 1 })
+            .eq('id', remaining[i].id);
+        }
+      }
+
+      alert('User removed from waitlist.');
+      loadEvent();
+    } catch (err) {
+      console.error('Error removing waitlist user:', err);
+      alert('Failed to remove user from waitlist');
     }
   };
 
@@ -569,7 +682,14 @@ export function EventDetailPage() {
             { id: 'about', label: t('events.about') },
             { id: 'reviews', label: t('events.reviews') },
             { id: 'attendees', label: t('events.attendees') },
-            ...(isHost && event.approval_type === 'host_approval' ? [{ id: 'requests', label: `Requests (${pendingAttendees.length})` }] : [])
+            ...(isHost && (event.approval_type === 'host_approval' || event.waitlist_enabled) ? [{
+              id: 'requests',
+              label: event.approval_type === 'host_approval' && event.waitlist_enabled
+                ? `Requests & Queue (${pendingAttendees.length + waitlistQueue.length})`
+                : event.waitlist_enabled
+                  ? `Waitlist Queue (${waitlistQueue.length})`
+                  : `Requests (${pendingAttendees.length})`
+            }] : [])
           ].map((tab) => (
             <button
               key={tab.id}
@@ -691,41 +811,102 @@ export function EventDetailPage() {
           )}
 
           {activeTab === 'requests' && (
-            <div className="space-y-3">
-              {pendingAttendees.length > 0 ? (
-                pendingAttendees.map((attendee) => (
-                  <div key={attendee.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border">
-                    <Link to={`/profile/${attendee.user_id}`} className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {attendee.profile?.avatar_url ? (
-                          <img src={attendee.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-sm font-bold text-primary">{attendee.profile?.full_name?.[0]}</span>
-                        )}
+            <div className="space-y-6">
+              {event.approval_type === 'host_approval' && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                    Join Requests ({pendingAttendees.length})
+                  </h3>
+                  {pendingAttendees.length > 0 ? (
+                    pendingAttendees.map((attendee) => (
+                      <div key={attendee.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:border-border/80 transition-colors">
+                        <Link to={`/profile/${attendee.user_id}`} className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {attendee.profile?.avatar_url ? (
+                              <img src={attendee.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-sm font-bold text-primary">{attendee.profile?.full_name?.[0]}</span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold">{attendee.profile?.full_name}</p>
+                            <p className="text-xs text-muted-foreground">@{attendee.profile?.username}</p>
+                          </div>
+                        </Link>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => handleRejectRequest(attendee.id)}
+                            className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold hover:bg-destructive/20 transition-colors"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => handleApproveRequest(attendee.id, attendee.user_id)}
+                            className="px-3 py-1.5 rounded-lg bg-success/10 text-success text-xs font-semibold hover:bg-success/20 transition-colors"
+                          >
+                            Approve
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold">{attendee.profile?.full_name}</p>
-                        <p className="text-xs text-muted-foreground">@{attendee.profile?.username}</p>
-                      </div>
-                    </Link>
-                    <div className="flex gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => handleRejectRequest(attendee.id)}
-                        className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold hover:bg-destructive/20 transition-colors"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        onClick={() => handleApproveRequest(attendee.id, attendee.user_id)}
-                        className="px-3 py-1.5 rounded-lg bg-success/10 text-success text-xs font-semibold hover:bg-success/20 transition-colors"
-                      >
-                        Approve
-                      </button>
+                    ))
+                  ) : (
+                    <p className="text-center text-sm text-muted-foreground py-6 bg-card rounded-xl border border-border border-dashed">
+                      No pending requests
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {event.waitlist_enabled && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                    Waitlist Queue ({waitlistQueue.length})
+                  </h3>
+                  {waitlistQueue.length > 0 ? (
+                    <div className="space-y-3">
+                      {waitlistQueue.map((entry) => (
+                        <div key={entry.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:border-border/80 transition-colors">
+                          <Link to={`/profile/${entry.user_id}`} className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {entry.profile?.avatar_url ? (
+                                <img src={entry.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-sm font-bold text-primary">{entry.profile?.full_name?.[0]}</span>
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold">{entry.profile?.full_name}</p>
+                                <span className="px-2 py-0.5 rounded-md bg-warning/10 text-warning text-[10px] font-bold">
+                                  #{entry.position}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">@{entry.profile?.username}</p>
+                            </div>
+                          </Link>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => handleRemoveFromWaitlist(entry.id)}
+                              className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold hover:bg-destructive/20 transition-colors"
+                            >
+                              Remove
+                            </button>
+                            <button
+                              onClick={() => handleApproveWaitlist(entry.id, entry.user_id)}
+                              className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors"
+                            >
+                              Promote
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-center text-sm text-muted-foreground py-8">No pending requests</p>
+                  ) : (
+                    <p className="text-center text-sm text-muted-foreground py-6 bg-card rounded-xl border border-border border-dashed">
+                      Waitlist is empty
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}
