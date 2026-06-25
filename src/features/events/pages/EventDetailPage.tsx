@@ -27,6 +27,7 @@ export function EventDetailPage() {
   const [isSaved, setIsSaved] = useState(false);
   const [attendeeStatus, setAttendeeStatus] = useState<string | null>(null);
   const [hasTicket, setHasTicket] = useState(false);
+  const [isOnWaitlist, setIsOnWaitlist] = useState(false);
   const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees' | 'requests'>('about');
   const [showCheckout, setShowCheckout] = useState(false);
 
@@ -105,6 +106,15 @@ export function EventDetailPage() {
               .eq('status', 'pending');
             setPendingAttendees((pendingData || []) as EventAttendee[]);
           }
+
+          // Check if on waitlist
+          const { data: waitlistData } = await supabase
+            .from('event_waitlists')
+            .select('id')
+            .eq('event_id', id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+          setIsOnWaitlist(!!waitlistData);
         }
 
         // Similar events
@@ -245,6 +255,73 @@ export function EventDetailPage() {
     }
   };
 
+  const handleJoinWaitlist = async () => {
+    if (!isAuthenticated) {
+      navigate('/auth/login', { state: { from: location } });
+      return;
+    }
+    if (!event || !user) return;
+
+    // 1. Gender Validation
+    if (event.gender_restriction === 'male_only' && profile?.gender !== 'male') {
+      alert('This event is restricted to male participants only.');
+      return;
+    }
+    if (event.gender_restriction === 'female_only' && profile?.gender !== 'female') {
+      alert('This event is restricted to female participants only.');
+      return;
+    }
+
+    // 2. Age Validation
+    if (profile?.date_of_birth) {
+      const birthDate = new Date(profile.date_of_birth);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      
+      if (age < event.min_age || age > event.max_age) {
+        alert(`You must be between ${event.min_age} and ${event.max_age} years old to join this event.`);
+        return;
+      }
+    } else {
+      if (event.min_age > 18 || event.max_age < 99) {
+        alert('Please complete your profile details (date of birth) to join this event.');
+        return;
+      }
+    }
+
+    const confirmJoin = window.confirm('Would you like to join the waitlist for this event? We will notify you if a spot opens up.');
+    if (!confirmJoin) return;
+
+    try {
+      const { count } = await supabase
+        .from('event_waitlists')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', event.id);
+
+      const position = (count || 0) + 1;
+
+      const { error } = await supabase
+        .from('event_waitlists')
+        .insert({
+          event_id: event.id,
+          user_id: user.id,
+          position: position
+        });
+
+      if (error) throw error;
+      
+      alert('You have successfully joined the waitlist!');
+      loadEvent();
+    } catch (err) {
+      console.error('Error joining waitlist:', err);
+      alert('Failed to join waitlist. Please try again.');
+    }
+  };
+
   if (isLoading) return <PageLoader />;
   if (!event) return (
     <div className="p-8 text-center">
@@ -300,12 +377,33 @@ export function EventDetailPage() {
     }
 
     if (isSoldOut) {
+      if (isOnWaitlist) {
+        return (
+          <div className="flex items-center gap-2 px-6 py-3 rounded-xl bg-warning/10 text-warning font-medium">
+            <Clock className="w-5 h-5" />
+            {t('events.onWaitlist')}
+          </div>
+        );
+      }
+
+      if (event.waitlist_enabled) {
+        return (
+          <button
+            onClick={handleJoinWaitlist}
+            className="px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-lg shadow-primary/25"
+          >
+            <Clock className="w-4 h-4" />
+            {t('events.waitlist')}
+          </button>
+        );
+      }
+
       return (
         <button
           disabled
           className="px-6 py-3 rounded-xl bg-muted text-muted-foreground font-medium"
         >
-          {event.waitlist_enabled ? t('events.waitlist') : t('events.soldOut')}
+          {t('events.soldOut')}
         </button>
       );
     }
