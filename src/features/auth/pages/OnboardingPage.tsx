@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { ArrowRight, Loader2, Camera } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 const INTEREST_OPTIONS = [
   'Gaming', 'Cricket', 'Football', 'Badminton', 'Running', 'Cycling',
@@ -18,6 +19,8 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string>('');
   const [formData, setFormData] = useState({
     full_name: profile?.full_name || '',
     username: profile?.username || '',
@@ -41,16 +44,46 @@ export function OnboardingPage() {
     }));
   };
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onload = () => setAvatarPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleComplete = async () => {
     setIsLoading(true);
     try {
+      let avatarUrl = profile?.avatar_url || '';
+
+      if (avatarFile && profile?.id) {
+        const fileExt = avatarFile.name.split('.').pop();
+        const filePath = `avatars/${profile.id}/${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('user-uploads')
+          .upload(filePath, avatarFile, { upsert: true });
+
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('user-uploads')
+            .getPublicUrl(filePath);
+          avatarUrl = publicUrl;
+        } else {
+          console.error('Avatar upload error:', uploadError);
+        }
+      }
+
       await updateProfile({
         ...formData,
+        avatar_url: avatarUrl || null,
         onboarding_completed: true,
       } as any);
       navigate('/', { replace: true });
-    } catch {
-      // Handle error
+    } catch (err) {
+      console.error('Error completing onboarding:', err);
     } finally {
       setIsLoading(false);
     }
@@ -66,12 +99,26 @@ export function OnboardingPage() {
       className="space-y-4"
     >
       <div className="flex justify-center mb-4">
-        <div className="relative w-24 h-24 rounded-full bg-secondary flex items-center justify-center">
-          <Camera className="w-8 h-8 text-muted-foreground" />
+        <div 
+          onClick={() => document.getElementById('avatar-upload-input')?.click()}
+          className="relative w-24 h-24 rounded-full bg-secondary flex items-center justify-center overflow-hidden cursor-pointer hover:bg-secondary/80 transition-colors"
+        >
+          {avatarPreview ? (
+            <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+          ) : (
+            <Camera className="w-8 h-8 text-muted-foreground" />
+          )}
           <button className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground shadow-lg">
             <span className="text-lg">+</span>
           </button>
         </div>
+        <input 
+          type="file" 
+          id="avatar-upload-input" 
+          accept="image/*" 
+          onChange={handleAvatarChange} 
+          className="hidden" 
+        />
       </div>
 
       <div>

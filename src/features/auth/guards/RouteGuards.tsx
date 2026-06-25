@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, role } = useAuth();
+  const { isAuthenticated, isLoading, role, profile } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -24,6 +24,10 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
     return <Navigate to="/auth/login" state={{ from: location }} replace />;
   }
 
+  if (profile && !profile.onboarding_completed && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />;
+  }
+
   if (roles && !roles.includes(role)) {
     return <Navigate to="/" replace />;
   }
@@ -32,7 +36,7 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
 }
 
 export function GuestRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, profile } = useAuth();
 
   if (isLoading) {
     return (
@@ -43,6 +47,9 @@ export function GuestRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
+    if (profile && !profile.onboarding_completed) {
+      return <Navigate to="/onboarding" replace />;
+    }
     return <Navigate to="/" replace />;
   }
 

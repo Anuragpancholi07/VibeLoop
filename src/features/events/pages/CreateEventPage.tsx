@@ -38,6 +38,7 @@ export function CreateEventPage() {
   const [addressSearch, setAddressSearch] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
   // Map refs
   const mapRef = useRef<any>(null);
@@ -180,6 +181,7 @@ export function CreateEventPage() {
       return;
     }
 
+    setIsFetchingLocation(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude: lat, longitude: lng } = position.coords;
@@ -205,11 +207,14 @@ export function CreateEventPage() {
           }
         } catch (err) {
           console.error(err);
+        } finally {
+          setIsFetchingLocation(false);
         }
       },
       (error) => {
         console.error(error);
         alert('Failed to obtain location. Please grant permission in browser settings.');
+        setIsFetchingLocation(false);
       }
     );
   };
@@ -471,10 +476,15 @@ export function CreateEventPage() {
       <div className="flex justify-between items-center gap-2">
         <button 
           onClick={handleGetCurrentLocation} 
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition-colors"
+          disabled={isFetchingLocation}
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition-colors disabled:opacity-50"
         >
-          <Navigation className="w-3.5 h-3.5" />
-          Use Current Location
+          {isFetchingLocation ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Navigation className="w-3.5 h-3.5" />
+          )}
+          {isFetchingLocation ? 'Fetching location...' : 'Use Current Location'}
         </button>
         <span className="text-[10px] text-muted-foreground">Click map or drag pin to fine-tune</span>
       </div>
