@@ -21,12 +21,13 @@ export function EventDetailPage() {
   const [event, setEvent] = useState<Event | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [attendees, setAttendees] = useState<EventAttendee[]>([]);
+  const [pendingAttendees, setPendingAttendees] = useState<EventAttendee[]>([]);
   const [similarEvents, setSimilarEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [attendeeStatus, setAttendeeStatus] = useState<string | null>(null);
   const [hasTicket, setHasTicket] = useState(false);
-  const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees'>('about');
+  const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees' | 'requests'>('about');
   const [showCheckout, setShowCheckout] = useState(false);
 
   const navigate = useNavigate();
@@ -94,6 +95,16 @@ export function EventDetailPage() {
             .eq('status', 'active')
             .maybeSingle();
           setHasTicket(!!ticketData);
+
+          // Load pending requests if host
+          if (eventData.host_id === user.id && eventData.approval_type === 'host_approval') {
+            const { data: pendingData } = await supabase
+              .from('event_attendees')
+              .select('*, profile:profiles(*)')
+              .eq('event_id', id)
+              .eq('status', 'pending');
+            setPendingAttendees((pendingData || []) as EventAttendee[]);
+          }
         }
 
         // Similar events
@@ -183,6 +194,54 @@ export function EventDetailPage() {
     } else {
       // Fallback: copy to clipboard
       navigator.clipboard?.writeText(window.location.href);
+    }
+  };
+
+  const handleApproveRequest = async (attendeeId: string, attendeeUserId: string) => {
+    if (!event) return;
+    try {
+      const { error } = await supabase
+        .from('event_attendees')
+        .update({ status: 'approved', approved_at: new Date().toISOString() })
+        .eq('id', attendeeId);
+
+      if (error) throw error;
+
+      // If it's a free event, create an active ticket immediately
+      if (event.is_free) {
+        const ticketNumber = 'VL-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+        const qrData = `vibeloop:ticket:${ticketNumber}:${event.id}:${attendeeUserId}`;
+        await supabase
+          .from('event_tickets')
+          .insert({
+            user_id: attendeeUserId,
+            event_id: event.id,
+            attendee_id: attendeeId,
+            ticket_number: ticketNumber,
+            qr_code_data: qrData,
+            status: 'active',
+          });
+      }
+
+      loadEvent();
+    } catch (err) {
+      console.error('Error approving request:', err);
+      alert('Failed to approve request');
+    }
+  };
+
+  const handleRejectRequest = async (attendeeId: string) => {
+    try {
+      const { error } = await supabase
+        .from('event_attendees')
+        .update({ status: 'rejected', cancelled_at: new Date().toISOString() })
+        .eq('id', attendeeId);
+
+      if (error) throw error;
+      loadEvent();
+    } catch (err) {
+      console.error('Error rejecting request:', err);
+      alert('Failed to reject request');
     }
   };
 
@@ -408,16 +467,21 @@ export function EventDetailPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 mt-6 p-1 rounded-xl bg-secondary/30">
-          {(['about', 'reviews', 'attendees'] as const).map((tab) => (
+          {[
+            { id: 'about', label: t('events.about') },
+            { id: 'reviews', label: t('events.reviews') },
+            { id: 'attendees', label: t('events.attendees') },
+            ...(isHost && event.approval_type === 'host_approval' ? [{ id: 'requests', label: `Requests (${pendingAttendees.length})` }] : [])
+          ].map((tab) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
               className={cn(
                 'flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors capitalize',
-                activeTab === tab ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground'
+                activeTab === tab.id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground'
               )}
             >
-              {t(`events.${tab}`)}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -524,6 +588,46 @@ export function EventDetailPage() {
               ))}
               {attendees.length === 0 && (
                 <p className="col-span-full text-center text-sm text-muted-foreground py-8">Be the first to join!</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'requests' && (
+            <div className="space-y-3">
+              {pendingAttendees.length > 0 ? (
+                pendingAttendees.map((attendee) => (
+                  <div key={attendee.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border">
+                    <Link to={`/profile/${attendee.user_id}`} className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {attendee.profile?.avatar_url ? (
+                          <img src={attendee.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-sm font-bold text-primary">{attendee.profile?.full_name?.[0]}</span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">{attendee.profile?.full_name}</p>
+                        <p className="text-xs text-muted-foreground">@{attendee.profile?.username}</p>
+                      </div>
+                    </Link>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => handleRejectRequest(attendee.id)}
+                        className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold hover:bg-destructive/20 transition-colors"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        onClick={() => handleApproveRequest(attendee.id, attendee.user_id)}
+                        className="px-3 py-1.5 rounded-lg bg-success/10 text-success text-xs font-semibold hover:bg-success/20 transition-colors"
+                      >
+                        Approve
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-sm text-muted-foreground py-8">No pending requests</p>
               )}
             </div>
           )}
