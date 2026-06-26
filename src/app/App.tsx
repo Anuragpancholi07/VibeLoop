@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HelmetProvider } from 'react-helmet-async';
 import { ThemeProvider } from '@/themes';
 import { AuthProvider } from '@/features/auth/AuthContext';
+import { LocationProvider } from '@/context/LocationContext';
 import { AppRouter } from './Router';
 import '@/i18n/i18n';
 
@@ -21,7 +22,9 @@ export function App() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <AuthProvider>
-            <AppRouter />
+            <LocationProvider>
+              <AppRouter />
+            </LocationProvider>
           </AuthProvider>
         </ThemeProvider>
       </QueryClientProvider>

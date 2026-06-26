@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, Search } from 'lucide-react';
+import { Bell, Search, MapPin, ChevronDown } from 'lucide-react';
 import { ThemeSwitcher } from '@/themes';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useLocationContext } from '@/context/LocationContext';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
@@ -15,6 +16,7 @@ interface HeaderProps {
 
 export function Header({ title, showSearch = true, className }: HeaderProps) {
   const { isAuthenticated, user } = useAuth();
+  const { selectedCity, setSelectedCity, availableCities } = useLocationContext();
   const navigate = useNavigate();
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
@@ -66,15 +68,39 @@ export function Header({ title, showSearch = true, className }: HeaderProps) {
   return (
     <header className={cn('sticky top-0 z-40 glass-strong safe-top border-b border-border/50', className)}>
       <div className="max-w-7xl mx-auto flex items-center justify-between px-4 h-14">
-        {/* Logo / Title */}
-        <Link to="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
-            <span className="text-sm font-black text-white">V</span>
+        {/* Logo and Location Selector */}
+        <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
+              <span className="text-sm font-black text-white">V</span>
+            </div>
+            <span className="text-lg font-bold gradient-text hidden sm:block">
+              {title || 'VibeLoop'}
+            </span>
+          </Link>
+
+          {/* Location Dropdown */}
+          <div className="relative flex-shrink-0">
+            <select
+              value={selectedCity}
+              onChange={(e) => setSelectedCity(e.target.value)}
+              className="appearance-none pl-8 pr-7 py-1 rounded-full text-xs font-semibold bg-secondary/50 border border-border text-foreground hover:bg-secondary cursor-pointer transition-all focus:outline-none focus:ring-1 focus:ring-primary min-w-[100px]"
+            >
+              <option value="">All India</option>
+              {availableCities.map((city) => (
+                <option key={city} value={city}>
+                  {city}
+                </option>
+              ))}
+            </select>
+            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-primary">
+              <MapPin className="w-3.5 h-3.5" />
+            </div>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
+              <ChevronDown className="w-3 h-3" />
+            </div>
           </div>
-          <span className="text-lg font-bold gradient-text hidden sm:block">
-            {title || 'VibeLoop'}
-          </span>
-        </Link>
+        </div>
 
         {/* Search bar (desktop) */}
         {showSearch && (

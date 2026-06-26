@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, SlidersHorizontal, X, MapPin } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useLocationContext } from '@/context/LocationContext';
 import { EventCard } from '@/features/events/components/EventCard';
 import { CardSkeleton, EmptyState } from '@/components/common';
 import { RADIUS_OPTIONS, SORT_OPTIONS, GENDER_OPTIONS } from '@/lib/constants';
@@ -12,6 +13,7 @@ import type { Event, EventCategory } from '@/types';
 export function ExplorePage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { selectedCity } = useLocationContext();
   const [events, setEvents] = useState<Event[]>([]);
   const [categories, setCategories] = useState<EventCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,8 +29,8 @@ export function ExplorePage() {
   }, []);
 
   useEffect(() => {
-    loadEvents();
-  }, [search, selectedCategory, sortBy, isFree]);
+    loadEvents(selectedCity);
+  }, [search, selectedCategory, sortBy, isFree, selectedCity]);
 
   const loadCategories = async () => {
     const { data } = await supabase
@@ -39,13 +41,17 @@ export function ExplorePage() {
     setCategories((data || []) as EventCategory[]);
   };
 
-  const loadEvents = async () => {
+  const loadEvents = async (city: string) => {
     setIsLoading(true);
     try {
       let query = supabase
         .from('events')
         .select('*, host:profiles(*), category:event_categories(*)')
         .eq('status', 'published');
+
+      if (city) {
+        query = query.ilike('city', city);
+      }
 
       if (search) {
         query = query.ilike('title', `%${search}%`);

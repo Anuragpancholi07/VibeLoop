@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { MapPin, ChevronRight, Sparkles, TrendingUp, Clock, Compass } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useLocationContext } from '@/context/LocationContext';
 import { EventCard } from '@/features/events/components/EventCard';
 import { CardSkeleton } from '@/components/common';
 import type { Event, EventCategory } from '@/types';
@@ -12,6 +13,7 @@ import type { Event, EventCategory } from '@/types';
 export function HomePage() {
   const { t } = useTranslation();
   const { isAuthenticated, profile } = useAuth();
+  const { selectedCity } = useLocationContext();
   const [featuredEvents, setFeaturedEvents] = useState<Event[]>([]);
   const [nearbyEvents, setNearbyEvents] = useState<Event[]>([]);
   const [trendingEvents, setTrendingEvents] = useState<Event[]>([]);
@@ -19,16 +21,27 @@ export function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(selectedCity);
+  }, [selectedCity]);
 
-  const loadData = async () => {
+  const loadData = async (city: string) => {
+    setIsLoading(true);
     try {
+      let featQuery = supabase.from('events').select('*, host:profiles(*), category:event_categories(*)').eq('status', 'published').eq('is_featured', true).limit(5);
+      let trendQuery = supabase.from('events').select('*, host:profiles(*), category:event_categories(*)').eq('status', 'published').order('views_count', { ascending: false }).limit(10);
+      let nearQuery = supabase.from('events').select('*, host:profiles(*), category:event_categories(*)').eq('status', 'published').order('event_date').limit(10);
+
+      if (city) {
+        featQuery = featQuery.ilike('city', city);
+        trendQuery = trendQuery.ilike('city', city);
+        nearQuery = nearQuery.ilike('city', city);
+      }
+
       const [catRes, featRes, trendRes, nearRes] = await Promise.all([
         supabase.from('event_categories').select('*').eq('is_active', true).order('sort_order'),
-        supabase.from('events').select('*, host:profiles(*), category:event_categories(*)').eq('status', 'published').eq('is_featured', true).limit(5),
-        supabase.from('events').select('*, host:profiles(*), category:event_categories(*)').eq('status', 'published').order('views_count', { ascending: false }).limit(10),
-        supabase.from('events').select('*, host:profiles(*), category:event_categories(*)').eq('status', 'published').order('event_date').limit(10),
+        featQuery,
+        trendQuery,
+        nearQuery,
       ]);
       setCategories((catRes.data || []) as EventCategory[]);
       setFeaturedEvents((featRes.data || []) as Event[]);
@@ -60,7 +73,7 @@ export function HomePage() {
             </p>
             <div className="flex items-center gap-2 text-white/70 text-sm">
               <MapPin className="w-4 h-4" />
-              <span>{profile?.city || 'Set your location'}</span>
+              <span>{selectedCity || 'All India'}</span>
             </div>
           </div>
         </div>
