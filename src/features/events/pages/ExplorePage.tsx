@@ -10,6 +10,16 @@ import { CardSkeleton, EmptyState } from '@/components/common';
 import { RADIUS_OPTIONS, SORT_OPTIONS, GENDER_OPTIONS } from '@/lib/constants';
 import type { Event, EventCategory } from '@/types';
 
+const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  'Delhi': { lat: 28.6139, lng: 77.2090 },
+  'Mumbai': { lat: 19.0760, lng: 72.8777 },
+  'Bengaluru': { lat: 12.9716, lng: 77.5946 },
+  'Pune': { lat: 18.5204, lng: 73.8567 },
+  'Hyderabad': { lat: 17.3850, lng: 78.4867 },
+  'Goa': { lat: 15.2993, lng: 74.1240 },
+  'Chennai': { lat: 13.0827, lng: 80.2707 },
+};
+
 export function ExplorePage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -23,14 +33,30 @@ export function ExplorePage() {
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'newest');
   const [isFree, setIsFree] = useState<boolean | null>(null);
   const [radius, setRadius] = useState(25);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     loadCategories();
+
+    // Query browser geolocation
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.error('Error fetching GPS coordinates:', error);
+        }
+      );
+    }
   }, []);
 
   useEffect(() => {
     loadEvents(selectedCity);
-  }, [search, selectedCategory, sortBy, isFree, selectedCity]);
+  }, [search, selectedCategory, sortBy, isFree, selectedCity, radius, userLocation]);
 
   const loadCategories = async () => {
     const { data } = await supabase
@@ -49,7 +75,40 @@ export function ExplorePage() {
         .select('*, host:profiles(*), category:event_categories(*)')
         .eq('status', 'published');
 
-      if (city) {
+      // Resolve starting coordinates for distance queries
+      let lat = userLocation?.lat;
+      let lng = userLocation?.lng;
+
+      if (!lat || !lng) {
+        const cityCoords = CITY_COORDINATES[city];
+        if (cityCoords) {
+          lat = cityCoords.lat;
+          lng = cityCoords.lng;
+        }
+      }
+
+      let nearbyData: any[] | null = null;
+
+      if (lat && lng && radius) {
+        const { data: nData, error: nError } = await supabase.rpc('search_nearby_events', {
+          user_lat: lat,
+          user_lng: lng,
+          radius_km: radius,
+          result_limit: 100
+        });
+
+        if (!nError && nData) {
+          nearbyData = nData;
+          const eventIds = nData.map((n: any) => n.event_id);
+          if (eventIds.length > 0) {
+            query = query.in('id', eventIds);
+          } else {
+            setEvents([]);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } else if (city) {
         query = query.ilike('city', city);
       }
 
@@ -82,7 +141,14 @@ export function ExplorePage() {
 
       query = query.limit(30);
       const { data } = await query;
-      setEvents((data || []) as Event[]);
+      let fetchedEvents = (data || []) as Event[];
+
+      if (lat && lng && radius && sortBy === 'closest' && nearbyData) {
+        const eventIdOrder = nearbyData.map((n: any) => n.event_id);
+        fetchedEvents.sort((a, b) => eventIdOrder.indexOf(a.id) - eventIdOrder.indexOf(b.id));
+      }
+
+      setEvents(fetchedEvents);
     } catch (error) {
       console.error('Error loading events:', error);
     } finally {

@@ -15,6 +15,8 @@ export const RADIUS_OPTIONS = [
   { value: 10, label: '10 KM' },
   { value: 25, label: '25 KM' },
   { value: 50, label: '50 KM' },
+  { value: 100, label: '100 KM' },
+  { value: 200, label: '200 KM' },
 ];
 
 export const SORT_OPTIONS = [
