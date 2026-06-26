@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
-import { Settings, Calendar, Users, MapPin, Shield, LogOut, Edit3, UserPlus, UserMinus } from 'lucide-react';
+import { Settings, Calendar, Users, MapPin, Shield, LogOut, Edit3, UserPlus, UserMinus, Send } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/features/auth/AuthContext';
 import { ThemeSwitcher } from '@/themes';
@@ -127,6 +127,88 @@ export function ProfilePage() {
     }
   };
 
+  const navigate = useNavigate();
+
+  const handleStartChat = async () => {
+    if (!user) {
+      alert('Please log in to chat.');
+      return;
+    }
+    if (user.id === profileId) {
+      alert("You can't chat with yourself.");
+      return;
+    }
+
+    try {
+      // 1. Find rooms where the current user is a member
+      const { data: myRooms } = await supabase
+        .from('chat_room_members')
+        .select('room_id')
+        .eq('user_id', user.id);
+
+      const myRoomIds = (myRooms || []).map((r: any) => r.room_id);
+
+      let existingRoomId: string | null = null;
+
+      if (myRoomIds.length > 0) {
+        // 2. Find if any of these rooms are of type 'direct' and also have the target user as a member
+        const { data: commonRooms } = await supabase
+          .from('chat_room_members')
+          .select('room_id')
+          .in('room_id', myRoomIds)
+          .eq('user_id', profileId);
+
+        const commonRoomIds = (commonRooms || []).map((r: any) => r.room_id);
+
+        if (commonRoomIds.length > 0) {
+          const { data: directRoom } = await supabase
+            .from('chat_rooms')
+            .select('id')
+            .in('id', commonRoomIds)
+            .eq('type', 'direct')
+            .maybeSingle();
+
+          if (directRoom) {
+            existingRoomId = directRoom.id;
+          }
+        }
+      }
+
+      if (existingRoomId) {
+        navigate(`/chat/${existingRoomId}`);
+      } else {
+        // 3. Create a new chat room of type 'direct'
+        const { data: newRoom, error: roomError } = await supabase
+          .from('chat_rooms')
+          .insert({
+            type: 'direct',
+            name: null,
+            is_active: true
+          })
+          .select('id')
+          .single();
+
+        if (roomError) throw roomError;
+        if (!newRoom) throw new Error('Failed to create chat room');
+
+        // 4. Add both members to the room
+        const { error: membersError } = await supabase
+          .from('chat_room_members')
+          .insert([
+            { room_id: newRoom.id, user_id: user.id },
+            { room_id: newRoom.id, user_id: profileId }
+          ]);
+
+        if (membersError) throw membersError;
+
+        navigate(`/chat/${newRoom.id}`);
+      }
+    } catch (error) {
+      console.error('Error starting direct chat:', error);
+      alert('Failed to start chat. Please try again.');
+    }
+  };
+
   if (isLoading) return <PageLoader />;
   if (!profile) return <div className="p-4 text-center">Profile not found</div>;
 
@@ -185,9 +267,19 @@ export function ProfilePage() {
               </button>
             </>
           ) : (
-            <button onClick={handleFollow} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-colors ${isFollowing ? 'bg-secondary border border-border' : 'bg-primary text-primary-foreground'}`}>
-              {isFollowing ? <><UserMinus className="w-4 h-4" /> {t('profile.unfollow')}</> : <><UserPlus className="w-4 h-4" /> {t('profile.follow')}</>}
-            </button>
+            <>
+              <button onClick={handleFollow} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-colors ${isFollowing ? 'bg-secondary border border-border' : 'bg-primary text-primary-foreground'}`}>
+                {isFollowing ? <><UserMinus className="w-4 h-4" /> {t('profile.unfollow')}</> : <><UserPlus className="w-4 h-4" /> {t('profile.follow')}</>}
+              </button>
+              {user && (
+                <button
+                  onClick={handleStartChat}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-colors"
+                >
+                  <Send className="w-4 h-4" /> Chat
+                </button>
+              )}
+            </>
           )}
         </div>
 
