@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, MapPin, Users, Clock, Share2, Bookmark, ChevronLeft,
-  Star, Shield, Tag, Info, CheckCircle2, Loader2, Ticket, LogIn, Send
+  Star, Shield, Tag, Info, CheckCircle2, Loader2, Ticket, LogIn, Send, X, Flag
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -33,6 +33,10 @@ export function EventDetailPage() {
   const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees' | 'requests'>('about');
   const [showCheckout, setShowCheckout] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState<'spam' | 'scam' | 'harassment' | 'fake_event' | 'inappropriate_content' | 'other'>('spam');
+  const [reportDescription, setReportDescription] = useState('');
+  const [isReporting, setIsReporting] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -543,6 +547,39 @@ export function EventDetailPage() {
     } catch (error) {
       console.error('Error starting direct chat:', error);
       alert('Failed to start chat. Please try again.');
+    }
+  };
+
+  const handleReportEvent = async () => {
+    if (!isAuthenticated) {
+      navigate('/auth/login', { state: { from: location } });
+      return;
+    }
+    if (!event || !user) return;
+
+    setIsReporting(true);
+    try {
+      const { error } = await supabase
+        .from('reports')
+        .insert({
+          reporter_id: user.id,
+          target_type: 'event',
+          target_id: event.id,
+          reason: reportReason,
+          description: reportDescription.trim() || null,
+          status: 'pending'
+        });
+
+      if (error) throw error;
+
+      alert('Thank you. The event has been reported. Our moderators will review it.');
+      setShowReportModal(false);
+      setReportDescription('');
+    } catch (err: any) {
+      console.error('Error reporting event:', err);
+      alert('Failed to submit report. Please try again.');
+    } finally {
+      setIsReporting(false);
     }
   };
 
@@ -1136,6 +1173,40 @@ export function EventDetailPage() {
           )}
         </div>
 
+        {/* Share & Report Option for Public Events */}
+        {event.event_type === 'public' && (
+          <div className="mt-8 p-4 rounded-2xl bg-card border border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex-1">
+              <h4 className="text-sm font-semibold">Share or report this event</h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Public events can be shared with anyone or reported if they violate guidelines.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handleShare}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Share
+              </button>
+              <button
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    navigate('/auth/login', { state: { from: location } });
+                  } else {
+                    setShowReportModal(true);
+                  }
+                }}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-destructive/10 text-destructive text-xs font-semibold hover:bg-destructive/20 transition-colors"
+              >
+                <Flag className="w-3.5 h-3.5" />
+                Report
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Similar Events */}
         {similarEvents.length > 0 && (
           <div className="mt-8">
@@ -1179,6 +1250,123 @@ export function EventDetailPage() {
           onSuccess={handleCheckoutSuccess}
         />
       )}
+
+      {/* Report Event Modal */}
+      <AnimatePresence>
+        {showReportModal && event && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isReporting) setShowReportModal(false);
+            }}
+          >
+            <motion.div
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 100, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="w-full sm:max-w-md bg-card rounded-t-3xl sm:rounded-2xl overflow-hidden border border-border shadow-2xl max-h-[90dvh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-border bg-card z-10">
+                <div>
+                  <h2 className="text-lg font-bold">Report Event</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{event.title}</p>
+                </div>
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  disabled={isReporting}
+                  className="p-1 rounded-full hover:bg-secondary transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body / Form */}
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                <div>
+                  <label className="text-sm font-semibold block mb-2">Why are you reporting this event?</label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { id: 'spam', label: 'Spam', desc: 'Repetitive, misleading, or promotional content' },
+                      { id: 'scam', label: 'Scam or fraud', desc: 'Financial fraud, ticket scams, or deceptive information' },
+                      { id: 'harassment', label: 'Harassment', desc: 'Threatening language or personal attacks' },
+                      { id: 'fake_event', label: 'Fake event', desc: 'Event is non-existent, fake location, or hosts won\'t show up' },
+                      { id: 'inappropriate_content', label: 'Inappropriate content', desc: 'Explicit, offensive, or hateful content' },
+                      { id: 'other', label: 'Other issue', desc: 'Any other violation of terms' },
+                    ].map((reason) => (
+                      <button
+                        key={reason.id}
+                        type="button"
+                        onClick={() => setReportReason(reason.id as any)}
+                        className={cn(
+                          "w-full text-left p-3 rounded-xl border transition-all flex flex-col gap-0.5",
+                          reportReason === reason.id
+                            ? "border-primary bg-primary/5 text-foreground shadow-sm shadow-primary/5"
+                            : "border-border bg-card hover:bg-secondary/40 text-muted-foreground"
+                        )}
+                      >
+                        <span className={cn("text-xs font-semibold", reportReason === reason.id && "text-primary")}>
+                          {reason.label}
+                        </span>
+                        <span className="text-[10px] opacity-80">{reason.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <label className="font-semibold">Description (Optional)</label>
+                    <span className={cn(reportDescription.length > 500 ? "text-destructive" : "text-muted-foreground")}>
+                      {reportDescription.length}/500
+                    </span>
+                  </div>
+                  <textarea
+                    value={reportDescription}
+                    onChange={(e) => setReportDescription(e.target.value.slice(0, 500))}
+                    placeholder="Provide additional details to help our moderators review this report..."
+                    rows={4}
+                    disabled={isReporting}
+                    className="w-full rounded-xl border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary disabled:opacity-50 resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 border-t border-border bg-card flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowReportModal(false)}
+                  disabled={isReporting}
+                  className="flex-1 py-3 rounded-xl bg-secondary text-foreground text-sm font-semibold hover:bg-secondary/80 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReportEvent}
+                  disabled={isReporting}
+                  className="flex-1 py-3 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-lg shadow-destructive/15"
+                >
+                  {isReporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    'Submit Report'
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
