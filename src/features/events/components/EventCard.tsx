@@ -75,31 +75,37 @@ export function EventCard({ event, variant = 'default', className, index = 0 }: 
       if (existingRoomId) {
         navigate(`/chat/${existingRoomId}`);
       } else {
-        // 3. Create a new chat room of type 'direct'
-        const { data: newRoom, error: roomError } = await supabase
+        // 3. Create a new chat room of type 'direct' by generating ID client-side
+        const newRoomId = typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+              const r = (Math.random() * 16) | 0;
+              const v = c === 'x' ? r : (r & 0x3) | 0x8;
+              return v.toString(16);
+            });
+
+        const { error: roomError } = await supabase
           .from('chat_rooms')
           .insert({
+            id: newRoomId,
             type: 'direct',
             name: null,
             is_active: true
-          })
-          .select('id')
-          .single();
+          });
 
         if (roomError) throw roomError;
-        if (!newRoom) throw new Error('Failed to create chat room');
 
         // 4. Add both members to the room
         const { error: membersError } = await supabase
           .from('chat_room_members')
           .insert([
-            { room_id: newRoom.id, user_id: user.id },
-            { room_id: newRoom.id, user_id: targetUserId }
+            { room_id: newRoomId, user_id: user.id },
+            { room_id: newRoomId, user_id: targetUserId }
           ]);
 
         if (membersError) throw membersError;
 
-        navigate(`/chat/${newRoom.id}`);
+        navigate(`/chat/${newRoomId}`);
       }
     } catch (error) {
       console.error('Error starting direct chat:', error);
