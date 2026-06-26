@@ -32,6 +32,7 @@ export function EventDetailPage() {
   const [isOnWaitlist, setIsOnWaitlist] = useState(false);
   const [activeTab, setActiveTab] = useState<'about' | 'reviews' | 'attendees' | 'requests'>('about');
   const [showCheckout, setShowCheckout] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -40,6 +41,13 @@ export function EventDetailPage() {
   const distance = userCoords && event?.latitude && event?.longitude
     ? getDistanceKm(userCoords.lat, userCoords.lng, event.latitude, event.longitude)
     : null;
+
+  const allImages = event
+    ? [
+        ...(event.banner_url ? [event.banner_url] : []),
+        ...(event.images || []).sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0)).map((img: any) => img.image_url)
+      ]
+    : [];
 
   useEffect(() => {
     if (id) loadEvent();
@@ -650,15 +658,54 @@ export function EventDetailPage() {
   return (
     <div className="pb-28">
       {/* Banner */}
-      <div className="relative aspect-video sm:aspect-[21/9] bg-secondary overflow-hidden">
-        {event.banner_url ? (
-          <img src={event.banner_url} alt={event.title} className="w-full h-full object-cover" />
+      <div className="relative aspect-video sm:aspect-[21/9] bg-secondary overflow-hidden group/banner">
+        {allImages.length > 0 ? (
+          <motion.img 
+            key={activeImageIndex}
+            src={allImages[activeImageIndex]} 
+            alt={event.title} 
+            className="w-full h-full object-cover"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+          />
         ) : (
           <div className="w-full h-full gradient-primary opacity-80 flex items-center justify-center">
             <span className="text-6xl">{event.category?.icon || '🎉'}</span>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent pointer-events-none" />
+
+        {/* Carousel controls */}
+        {allImages.length > 1 && (
+          <>
+            <button
+              onClick={() => setActiveImageIndex((prev) => (prev === 0 ? allImages.length - 1 : prev - 1))}
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 transition-colors opacity-0 group-hover/banner:opacity-100 z-10 cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setActiveImageIndex((prev) => (prev === allImages.length - 1 ? 0 : prev + 1))}
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center hover:bg-black/60 transition-colors opacity-0 group-hover/banner:opacity-100 z-10 cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4 rotate-180" />
+            </button>
+            {/* Dots */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+              {allImages.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setActiveImageIndex(i)}
+                  className={cn(
+                    "w-2 h-2 rounded-full transition-all cursor-pointer",
+                    activeImageIndex === i ? "bg-white w-4" : "bg-white/50"
+                  )}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Back button */}
         <button

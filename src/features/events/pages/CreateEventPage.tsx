@@ -103,9 +103,9 @@ export function CreateEventPage() {
   };
 
 
-  // Image upload states
-  const [bannerFile, setBannerFile] = useState<File | null>(null);
-  const [bannerPreview, setBannerPreview] = useState<string>('');
+  // Image upload states - max 3 photos
+  const [imageFiles, setImageFiles] = useState<(File | null)[]>([null, null, null]);
+  const [imagePreviews, setImagePreviews] = useState<(string | null)[]>([null, null, null]);
 
   // Address search states
   const [addressSearch, setAddressSearch] = useState('');
@@ -136,15 +136,40 @@ export function CreateEventPage() {
     updateForm('rules', form.rules.filter((_, i) => i !== index));
   };
 
-  // File picker handler
-  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Image picker handlers
+  const handleImageChange = (index: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setBannerFile(file);
+      setImageFiles((prev) => {
+        const next = [...prev];
+        next[index] = file;
+        return next;
+      });
       const reader = new FileReader();
-      reader.onload = () => setBannerPreview(reader.result as string);
+      reader.onload = () => {
+        setImagePreviews((prev) => {
+          const next = [...prev];
+          next[index] = reader.result as string;
+          return next;
+        });
+      };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleRemoveImage = (index: number) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setImageFiles((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
+    setImagePreviews((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
   };
 
   // Debounced search suggestions using OpenStreetMap Nominatim API
@@ -296,7 +321,7 @@ export function CreateEventPage() {
   const isStepValid = (stepIndex: number) => {
     switch (stepIndex) {
       case 0:
-        return !!form.title.trim() && !!form.category_id && !!bannerFile;
+        return !!form.title.trim() && !!form.category_id && !!imageFiles[0];
       case 1:
         return !!form.event_type && !!form.event_date && !!form.start_time && !!form.end_time;
       case 2:
@@ -324,16 +349,17 @@ export function CreateEventPage() {
       if (!form.event_date) throw new Error('Please select an event date');
       if (!form.start_time) throw new Error('Please set a start time');
       if (!form.end_time) throw new Error('Please set an end time');
-      if (!bannerFile) throw new Error('Please upload a banner image');
+      if (!imageFiles[0]) throw new Error('Please upload a banner image');
 
       // Upload banner image to Supabase Storage
       let bannerUrl = null;
-      if (bannerFile) {
-        const fileExt = bannerFile.name.split('.').pop();
-        const filePath = `events/${user.id}/${Date.now()}.${fileExt}`;
+      const primaryFile = imageFiles[0];
+      if (primaryFile) {
+        const fileExt = primaryFile.name.split('.').pop();
+        const filePath = `events/${user.id}/${Date.now()}_0.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from('user-uploads')
-          .upload(filePath, bannerFile, { upsert: true });
+          .upload(filePath, primaryFile, { upsert: true });
 
         if (uploadError) {
           throw new Error('Failed to upload image banner: ' + uploadError.message);
@@ -398,6 +424,44 @@ export function CreateEventPage() {
         }
         throw insertError;
       }
+
+      // Upload and insert optional additional images (indices 1 and 2)
+      const additionalUploads = [];
+      for (let i = 1; i <= 2; i++) {
+        const file = imageFiles[i];
+        if (file) {
+          const fileExt = file.name.split('.').pop();
+          const filePath = `events/${user.id}/${Date.now()}_${i}.${fileExt}`;
+          const { error: uploadError } = await supabase.storage
+            .from('user-uploads')
+            .upload(filePath, file, { upsert: true });
+
+          if (uploadError) {
+            console.error(`Failed to upload optional image ${i}:`, uploadError);
+            continue;
+          }
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('user-uploads')
+            .getPublicUrl(filePath);
+
+          additionalUploads.push({
+            event_id: data.id,
+            image_url: publicUrl,
+            sort_order: i
+          });
+        }
+      }
+
+      if (additionalUploads.length > 0) {
+        const { error: imagesError } = await supabase
+          .from('event_images')
+          .insert(additionalUploads);
+        if (imagesError) {
+          console.error('Error saving additional event images:', imagesError);
+        }
+      }
+
       navigate(`/events/${data.id}`);
     } catch (err: any) {
       console.error('Error creating event:', err);
@@ -477,26 +541,109 @@ export function CreateEventPage() {
       </div>
 
       <div>
-        <label className="text-sm font-medium mb-1 block">{t('createEvent.bannerImage')} *</label>
-        <div 
-          onClick={() => document.getElementById('banner-upload-input')?.click()}
-          className="relative flex items-center justify-center w-full h-36 rounded-xl border-2 border-dashed border-border bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors overflow-hidden"
-        >
-          {bannerPreview ? (
-            <img src={bannerPreview} alt="Preview" className="w-full h-full object-cover" />
-          ) : (
-            <div className="text-center">
-              <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
-              <span className="text-xs text-muted-foreground">{t('createEvent.uploadImage')}</span>
+        <label className="text-sm font-medium mb-2 block">Event Photos (Max 3, banner image is required) *</label>
+        <div className="space-y-3">
+          {/* Slot 1: Primary Banner */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Primary Banner (Required)</p>
+            <div 
+              onClick={() => document.getElementById('image-upload-input-0')?.click()}
+              className="relative flex items-center justify-center w-full h-40 rounded-xl border-2 border-dashed border-border bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors overflow-hidden group"
+            >
+              {imagePreviews[0] ? (
+                <>
+                  <img src={imagePreviews[0]} alt="Banner Preview" className="w-full h-full object-cover" />
+                  <button 
+                    onClick={handleRemoveImage(0)}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <div className="text-center">
+                  <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
+                  <span className="text-xs text-muted-foreground">Upload Banner</span>
+                </div>
+              )}
+              <input 
+                type="file" 
+                id="image-upload-input-0" 
+                accept="image/*" 
+                onChange={handleImageChange(0)} 
+                className="hidden" 
+              />
             </div>
-          )}
-          <input 
-            type="file" 
-            id="banner-upload-input" 
-            accept="image/*" 
-            onChange={handleBannerChange} 
-            className="hidden" 
-          />
+          </div>
+
+          {/* Slots 2 and 3 */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Slot 2: Additional Photo 1 */}
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Additional Photo 1 (Optional)</p>
+              <div 
+                onClick={() => document.getElementById('image-upload-input-1')?.click()}
+                className="relative flex items-center justify-center w-full h-28 rounded-xl border-2 border-dashed border-border bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors overflow-hidden group"
+              >
+                {imagePreviews[1] ? (
+                  <>
+                    <img src={imagePreviews[1]} alt="Preview 1" className="w-full h-full object-cover" />
+                    <button 
+                      onClick={handleRemoveImage(1)}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="text-center">
+                    <Upload className="w-5 h-5 text-muted-foreground mx-auto mb-1" />
+                    <span className="text-[11px] text-muted-foreground">Upload Photo</span>
+                  </div>
+                )}
+                <input 
+                  type="file" 
+                  id="image-upload-input-1" 
+                  accept="image/*" 
+                  onChange={handleImageChange(1)} 
+                  className="hidden" 
+                />
+              </div>
+            </div>
+
+            {/* Slot 3: Additional Photo 2 */}
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Additional Photo 2 (Optional)</p>
+              <div 
+                onClick={() => document.getElementById('image-upload-input-2')?.click()}
+                className="relative flex items-center justify-center w-full h-28 rounded-xl border-2 border-dashed border-border bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors overflow-hidden group"
+              >
+                {imagePreviews[2] ? (
+                  <>
+                    <img src={imagePreviews[2]} alt="Preview 2" className="w-full h-full object-cover" />
+                    <button 
+                      onClick={handleRemoveImage(2)}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="text-center">
+                    <Upload className="w-5 h-5 text-muted-foreground mx-auto mb-1" />
+                    <span className="text-[11px] text-muted-foreground">Upload Photo</span>
+                  </div>
+                )}
+                <input 
+                  type="file" 
+                  id="image-upload-input-2" 
+                  accept="image/*" 
+                  onChange={handleImageChange(2)} 
+                  className="hidden" 
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>,
