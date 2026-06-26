@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
   Calendar, MapPin, Users, Clock, Share2, Bookmark, ChevronLeft,
-  Star, Shield, Tag, Info, CheckCircle2, Loader2, Ticket, LogIn
+  Star, Shield, Tag, Info, CheckCircle2, Loader2, Ticket, LogIn, Send
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -458,6 +458,86 @@ export function EventDetailPage() {
     }
   };
 
+  const startDirectChat = async (targetUserId: string) => {
+    if (!user) {
+      alert('Please log in to chat.');
+      return;
+    }
+    if (user.id === targetUserId) {
+      alert("You can't chat with yourself.");
+      return;
+    }
+
+    try {
+      // 1. Find rooms where the current user is a member
+      const { data: myRooms } = await supabase
+        .from('chat_room_members')
+        .select('room_id')
+        .eq('user_id', user.id);
+
+      const myRoomIds = (myRooms || []).map((r: any) => r.room_id);
+
+      let existingRoomId: string | null = null;
+
+      if (myRoomIds.length > 0) {
+        // 2. Find if any of these rooms are of type 'direct' and also have the target user as a member
+        const { data: commonRooms } = await supabase
+          .from('chat_room_members')
+          .select('room_id')
+          .in('room_id', myRoomIds)
+          .eq('user_id', targetUserId);
+
+        const commonRoomIds = (commonRooms || []).map((r: any) => r.room_id);
+
+        if (commonRoomIds.length > 0) {
+          const { data: directRoom } = await supabase
+            .from('chat_rooms')
+            .select('id')
+            .in('id', commonRoomIds)
+            .eq('type', 'direct')
+            .maybeSingle();
+
+          if (directRoom) {
+            existingRoomId = directRoom.id;
+          }
+        }
+      }
+
+      if (existingRoomId) {
+        navigate(`/chat/${existingRoomId}`);
+      } else {
+        // 3. Create a new chat room of type 'direct'
+        const { data: newRoom, error: roomError } = await supabase
+          .from('chat_rooms')
+          .insert({
+            type: 'direct',
+            name: null,
+            is_active: true
+          })
+          .select('id')
+          .single();
+
+        if (roomError) throw roomError;
+        if (!newRoom) throw new Error('Failed to create chat room');
+
+        // 4. Add both members to the room
+        const { error: membersError } = await supabase
+          .from('chat_room_members')
+          .insert([
+            { room_id: newRoom.id, user_id: user.id },
+            { room_id: newRoom.id, user_id: targetUserId }
+          ]);
+
+        if (membersError) throw membersError;
+
+        navigate(`/chat/${newRoom.id}`);
+      }
+    } catch (error) {
+      console.error('Error starting direct chat:', error);
+      alert('Failed to start chat. Please try again.');
+    }
+  };
+
   if (isLoading) return <PageLoader />;
   if (!event) return (
     <div className="p-8 text-center">
@@ -682,31 +762,48 @@ export function EventDetailPage() {
 
         {/* Host */}
         {event.host && (
-          <Link
-            to={`/profile/${event.host.id}`}
-            className="flex items-center gap-3 mt-4 p-3 rounded-xl bg-card border border-border hover:bg-secondary/30 transition-colors"
-          >
-            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-              {event.host.avatar_url ? (
-                <img src={event.host.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-lg font-bold text-primary">{event.host.full_name?.[0]}</span>
+          <div className="flex items-center justify-between mt-4 p-3 rounded-xl bg-card border border-border">
+            <Link
+              to={`/profile/${event.host.id}`}
+              className="flex items-center gap-3 flex-1 min-w-0"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                {event.host.avatar_url ? (
+                  <img src={event.host.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-lg font-bold text-primary">{event.host.full_name?.[0]}</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold truncate">{event.host.full_name}</p>
+                  {event.host.is_verified_host && <Shield className="w-4 h-4 text-primary flex-shrink-0" />}
+                </div>
+                <p className="text-xs text-muted-foreground">Host • {event.host.events_hosted} events</p>
+              </div>
+            </Link>
+            <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+              {event.avg_rating > 0 && (
+                <div className="flex items-center gap-1 bg-secondary/50 px-2.5 py-1 rounded-lg flex-shrink-0">
+                  <Star className="w-3.5 h-3.5 fill-warning text-warning" />
+                  <span className="text-xs font-semibold">{event.avg_rating.toFixed(1)}</span>
+                </div>
+              )}
+              {!isHost && isAuthenticated && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startDirectChat(event.host_id);
+                  }}
+                  className="p-2.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex-shrink-0"
+                  title="Chat with Host"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
               )}
             </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold">{event.host.full_name}</p>
-                {event.host.is_verified_host && <Shield className="w-4 h-4 text-primary" />}
-              </div>
-              <p className="text-xs text-muted-foreground">Host • {event.host.events_hosted} events</p>
-            </div>
-            {event.avg_rating > 0 && (
-              <div className="flex items-center gap-1">
-                <Star className="w-4 h-4 fill-warning text-warning" />
-                <span className="text-sm font-semibold">{event.avg_rating.toFixed(1)}</span>
-              </div>
-            )}
-          </Link>
+          </div>
         )}
 
         {/* Tabs */}
@@ -820,27 +917,62 @@ export function EventDetailPage() {
           )}
 
           {activeTab === 'attendees' && (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {attendees.map((attendee) => (
-                <Link
-                  key={attendee.id}
-                  to={`/profile/${attendee.user_id}`}
-                  className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-secondary/30 transition-colors"
-                >
-                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-                    {attendee.profile?.avatar_url ? (
-                      <img src={attendee.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-sm font-bold text-primary">{attendee.profile?.full_name?.[0]}</span>
+            isHost ? (
+              <div className="space-y-2">
+                {attendees.map((attendee) => (
+                  <div key={attendee.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:border-border/80 transition-colors">
+                    <Link to={`/profile/${attendee.user_id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {attendee.profile?.avatar_url ? (
+                          <img src={attendee.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-sm font-bold text-primary">{attendee.profile?.full_name?.[0]}</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold truncate">{attendee.profile?.full_name}</p>
+                        <p className="text-xs text-muted-foreground truncate">@{attendee.profile?.username}</p>
+                      </div>
+                    </Link>
+                    {attendee.user_id !== user?.id && (
+                      <button
+                        onClick={() => startDirectChat(attendee.user_id)}
+                        className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors flex-shrink-0 ml-2"
+                      >
+                        Chat
+                      </button>
                     )}
                   </div>
-                  <p className="text-xs font-medium text-center line-clamp-1">{attendee.profile?.full_name}</p>
-                </Link>
-              ))}
-              {attendees.length === 0 && (
-                <p className="col-span-full text-center text-sm text-muted-foreground py-8">Be the first to join!</p>
-              )}
-            </div>
+                ))}
+                {attendees.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground py-8 bg-card rounded-xl border border-border border-dashed">
+                    No attendees yet
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                {attendees.map((attendee) => (
+                  <Link
+                    key={attendee.id}
+                    to={`/profile/${attendee.user_id}`}
+                    className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-secondary/30 transition-colors"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                      {attendee.profile?.avatar_url ? (
+                        <img src={attendee.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-sm font-bold text-primary">{attendee.profile?.full_name?.[0]}</span>
+                      )}
+                    </div>
+                    <p className="text-xs font-medium text-center line-clamp-1">{attendee.profile?.full_name}</p>
+                  </Link>
+                ))}
+                {attendees.length === 0 && (
+                  <p className="col-span-full text-center text-sm text-muted-foreground py-8">Be the first to join!</p>
+                )}
+              </div>
+            )
           )}
 
           {activeTab === 'requests' && (
@@ -853,7 +985,7 @@ export function EventDetailPage() {
                   {pendingAttendees.length > 0 ? (
                     pendingAttendees.map((attendee) => (
                       <div key={attendee.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:border-border/80 transition-colors">
-                        <Link to={`/profile/${attendee.user_id}`} className="flex items-center gap-3">
+                        <Link to={`/profile/${attendee.user_id}`} className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
                             {attendee.profile?.avatar_url ? (
                               <img src={attendee.profile.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -861,12 +993,18 @@ export function EventDetailPage() {
                               <span className="text-sm font-bold text-primary">{attendee.profile?.full_name?.[0]}</span>
                             )}
                           </div>
-                          <div>
-                            <p className="text-sm font-semibold">{attendee.profile?.full_name}</p>
-                            <p className="text-xs text-muted-foreground">@{attendee.profile?.username}</p>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold truncate">{attendee.profile?.full_name}</p>
+                            <p className="text-xs text-muted-foreground truncate">@{attendee.profile?.username}</p>
                           </div>
                         </Link>
-                        <div className="flex gap-2 flex-shrink-0">
+                        <div className="flex gap-2 flex-shrink-0 ml-2">
+                          <button
+                            onClick={() => startDirectChat(attendee.user_id)}
+                            className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors"
+                          >
+                            Chat
+                          </button>
                           <button
                             onClick={() => handleRejectRequest(attendee.id)}
                             className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold hover:bg-destructive/20 transition-colors"
@@ -899,7 +1037,7 @@ export function EventDetailPage() {
                     <div className="space-y-3">
                       {waitlistQueue.map((entry) => (
                         <div key={entry.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:border-border/80 transition-colors">
-                          <Link to={`/profile/${entry.user_id}`} className="flex items-center gap-3">
+                          <Link to={`/profile/${entry.user_id}`} className="flex items-center gap-3 min-w-0 flex-1">
                             <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
                               {entry.profile?.avatar_url ? (
                                 <img src={entry.profile.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -907,17 +1045,23 @@ export function EventDetailPage() {
                                 <span className="text-sm font-bold text-primary">{entry.profile?.full_name?.[0]}</span>
                               )}
                             </div>
-                            <div>
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <p className="text-sm font-semibold">{entry.profile?.full_name}</p>
-                                <span className="px-2 py-0.5 rounded-md bg-warning/10 text-warning text-[10px] font-bold">
+                                <p className="text-sm font-semibold truncate">{entry.profile?.full_name}</p>
+                                <span className="px-2 py-0.5 rounded-md bg-warning/10 text-warning text-[10px] font-bold flex-shrink-0">
                                   #{entry.position}
                                 </span>
                               </div>
-                              <p className="text-xs text-muted-foreground">@{entry.profile?.username}</p>
+                              <p className="text-xs text-muted-foreground truncate">@{entry.profile?.username}</p>
                             </div>
                           </Link>
-                          <div className="flex gap-2 flex-shrink-0">
+                          <div className="flex gap-2 flex-shrink-0 ml-2">
+                            <button
+                              onClick={() => startDirectChat(entry.user_id)}
+                              className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors"
+                            >
+                              Chat
+                            </button>
                             <button
                               onClick={() => handleRemoveFromWaitlist(entry.id)}
                               className="px-3 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-semibold hover:bg-destructive/20 transition-colors"
