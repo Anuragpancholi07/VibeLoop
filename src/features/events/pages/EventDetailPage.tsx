@@ -39,6 +39,14 @@ export function EventDetailPage() {
     if (id) loadEvent();
   }, [id, user]);
 
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['about', 'reviews', 'attendees', 'requests'].includes(tabParam)) {
+      setActiveTab(tabParam as any);
+    }
+  }, [location.search]);
+
   const loadEvent = async () => {
     setIsLoading(true);
     try {
