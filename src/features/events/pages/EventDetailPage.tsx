@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/features/auth/AuthContext';
-import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils';
+import { cn, formatCurrency, formatDate, formatTime, getDistanceKm } from '@/lib/utils';
+import { useLocationContext } from '@/context/LocationContext';
 import { PageLoader } from '@/components/common';
 import { EventCard } from '@/features/events/components/EventCard';
 import { CheckoutModal } from '@/features/payments/RazorpayPayment';
@@ -34,6 +35,11 @@ export function EventDetailPage() {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const { userCoords } = useLocationContext();
+
+  const distance = userCoords && event?.latitude && event?.longitude
+    ? getDistanceKm(userCoords.lat, userCoords.lng, event.latitude, event.longitude)
+    : null;
 
   useEffect(() => {
     if (id) loadEvent();
@@ -642,7 +648,10 @@ export function EventDetailPage() {
                 <MapPin className="w-5 h-5 text-accent" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{event.address}</p>
+                <p className="text-sm font-medium truncate">
+                  {event.address}
+                  {distance !== null && ` (${distance.toFixed(1)} km away)`}
+                </p>
                 <p className="text-xs text-muted-foreground">{event.city}</p>
               </div>
             </div>

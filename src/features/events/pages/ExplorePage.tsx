@@ -10,20 +10,10 @@ import { CardSkeleton, EmptyState } from '@/components/common';
 import { RADIUS_OPTIONS, SORT_OPTIONS, GENDER_OPTIONS } from '@/lib/constants';
 import type { Event, EventCategory } from '@/types';
 
-const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
-  'Delhi': { lat: 28.6139, lng: 77.2090 },
-  'Mumbai': { lat: 19.0760, lng: 72.8777 },
-  'Bengaluru': { lat: 12.9716, lng: 77.5946 },
-  'Pune': { lat: 18.5204, lng: 73.8567 },
-  'Hyderabad': { lat: 17.3850, lng: 78.4867 },
-  'Goa': { lat: 15.2993, lng: 74.1240 },
-  'Chennai': { lat: 13.0827, lng: 80.2707 },
-};
-
 export function ExplorePage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { selectedCity } = useLocationContext();
+  const { selectedCity, userCoords } = useLocationContext();
   const [events, setEvents] = useState<Event[]>([]);
   const [categories, setCategories] = useState<EventCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,30 +23,14 @@ export function ExplorePage() {
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'newest');
   const [isFree, setIsFree] = useState<boolean | null>(null);
   const [radius, setRadius] = useState(25);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     loadCategories();
-
-    // Query browser geolocation
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        (error) => {
-          console.error('Error fetching GPS coordinates:', error);
-        }
-      );
-    }
   }, []);
 
   useEffect(() => {
     loadEvents(selectedCity);
-  }, [search, selectedCategory, sortBy, isFree, selectedCity, radius, userLocation]);
+  }, [search, selectedCategory, sortBy, isFree, selectedCity, radius, userCoords]);
 
   const loadCategories = async () => {
     const { data } = await supabase
@@ -76,16 +50,8 @@ export function ExplorePage() {
         .eq('status', 'published');
 
       // Resolve starting coordinates for distance queries
-      let lat = userLocation?.lat;
-      let lng = userLocation?.lng;
-
-      if (!lat || !lng) {
-        const cityCoords = CITY_COORDINATES[city];
-        if (cityCoords) {
-          lat = cityCoords.lat;
-          lng = cityCoords.lng;
-        }
-      }
+      let lat = userCoords?.lat;
+      let lng = userCoords?.lng;
 
       let nearbyData: any[] | null = null;
 

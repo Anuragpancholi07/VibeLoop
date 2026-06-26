@@ -6,7 +6,18 @@ interface LocationContextValue {
   selectedCity: string;
   setSelectedCity: (city: string) => Promise<void>;
   availableCities: string[];
+  userCoords: { lat: number; lng: number } | null;
 }
+
+const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  'Delhi': { lat: 28.6139, lng: 77.2090 },
+  'Mumbai': { lat: 19.0760, lng: 72.8777 },
+  'Bengaluru': { lat: 12.9716, lng: 77.5946 },
+  'Pune': { lat: 18.5204, lng: 73.8567 },
+  'Hyderabad': { lat: 17.3850, lng: 78.4867 },
+  'Goa': { lat: 15.2993, lng: 74.1240 },
+  'Chennai': { lat: 13.0827, lng: 80.2707 },
+};
 
 const LocationContext = createContext<LocationContextValue | undefined>(undefined);
 
@@ -32,6 +43,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     'Goa',
     'Chennai'
   ]);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Load cities from events table dynamically
   useEffect(() => {
@@ -70,6 +82,31 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }
   }, [profile]);
 
+  // Resolve user coords
+  useEffect(() => {
+    if (selectedCity && CITY_COORDINATES[selectedCity]) {
+      setUserCoords(CITY_COORDINATES[selectedCity]);
+    } else {
+      // Fallback to browser geolocation
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setUserCoords({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            });
+          },
+          (error) => {
+            console.error('Error fetching GPS coordinates:', error);
+            setUserCoords(null);
+          }
+        );
+      } else {
+        setUserCoords(null);
+      }
+    }
+  }, [selectedCity]);
+
   const setSelectedCity = async (city: string) => {
     setSelectedCityState(city);
     localStorage.setItem('vibeloop_selected_city', city);
@@ -83,7 +120,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <LocationContext.Provider value={{ selectedCity, setSelectedCity, availableCities }}>
+    <LocationContext.Provider value={{ selectedCity, setSelectedCity, availableCities, userCoords }}>
       {children}
     </LocationContext.Provider>
   );

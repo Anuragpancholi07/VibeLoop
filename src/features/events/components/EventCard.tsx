@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Calendar, MapPin, Users, Heart, Bookmark } from 'lucide-react';
-import { cn, formatCurrency, formatDate, formatTime } from '@/lib/utils';
+import { cn, formatCurrency, formatDate, formatTime, getDistanceKm } from '@/lib/utils';
+import { useLocationContext } from '@/context/LocationContext';
 import type { Event } from '@/types';
 
 interface EventCardProps {
@@ -14,6 +15,12 @@ interface EventCardProps {
 export function EventCard({ event, variant = 'default', className, index = 0 }: EventCardProps) {
   const isFeatured = variant === 'featured';
   const isCompact = variant === 'compact';
+  const { userCoords } = useLocationContext();
+
+  let distance = event.distance_km;
+  if (distance === undefined && userCoords && event.latitude && event.longitude) {
+    distance = getDistanceKm(userCoords.lat, userCoords.lng, event.latitude, event.longitude);
+  }
 
   return (
     <motion.div
@@ -117,7 +124,7 @@ export function EventCard({ event, variant = 'default', className, index = 0 }: 
                 <MapPin className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                 <span className="truncate">
                   {event.address || event.city}
-                  {event.distance_km !== undefined && ` • ${event.distance_km.toFixed(1)} km`}
+                  {distance !== undefined && ` • ${distance.toFixed(1)} km`}
                 </span>
               </div>
             )}
