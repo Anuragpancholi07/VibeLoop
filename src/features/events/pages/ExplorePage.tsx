@@ -22,10 +22,14 @@ export function ExplorePage() {
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || '');
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'newest');
   const [isFree, setIsFree] = useState<boolean | null>(null);
-  const [radius, setRadius] = useState(25);
+  const [radius, setRadius] = useState<number | null>(null);
 
   useEffect(() => {
     loadCategories();
+    // Clear URL search parameters on mount so they do not persist across refreshes or page changes
+    if (searchParams.toString()) {
+      setSearchParams({}, { replace: true });
+    }
   }, []);
 
   useEffect(() => {
@@ -54,12 +58,13 @@ export function ExplorePage() {
       let lng = userCoords?.lng;
 
       let nearbyData: any[] | null = null;
+      const activeRadius = radius || (sortBy === 'closest' ? 25 : null);
 
-      if (lat && lng && radius) {
+      if (lat && lng && activeRadius) {
         const { data: nData, error: nError } = await supabase.rpc('search_nearby_events', {
           user_lat: lat,
           user_lng: lng,
-          radius_km: radius,
+          radius_km: activeRadius,
           result_limit: 100
         });
 
@@ -109,7 +114,7 @@ export function ExplorePage() {
       const { data } = await query;
       let fetchedEvents = (data || []) as Event[];
 
-      if (lat && lng && radius && sortBy === 'closest' && nearbyData) {
+      if (lat && lng && activeRadius && sortBy === 'closest' && nearbyData) {
         const eventIdOrder = nearbyData.map((n: any) => n.event_id);
         fetchedEvents.sort((a, b) => eventIdOrder.indexOf(a.id) - eventIdOrder.indexOf(b.id));
       }
@@ -196,7 +201,7 @@ export function ExplorePage() {
                   {SORT_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
-                      onClick={() => setSortBy(opt.value)}
+                      onClick={() => setSortBy(sortBy === opt.value ? '' : opt.value)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                         sortBy === opt.value ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-foreground'
                       }`}
@@ -213,19 +218,19 @@ export function ExplorePage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setIsFree(null)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${isFree === null ? 'bg-primary text-primary-foreground' : 'bg-secondary/50'}`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isFree === null ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-foreground'}`}
                   >
                     All
                   </button>
                   <button
-                    onClick={() => setIsFree(true)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${isFree === true ? 'bg-primary text-primary-foreground' : 'bg-secondary/50'}`}
+                    onClick={() => setIsFree(isFree === true ? null : true)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isFree === true ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-foreground'}`}
                   >
                     Free
                   </button>
                   <button
-                    onClick={() => setIsFree(false)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${isFree === false ? 'bg-primary text-primary-foreground' : 'bg-secondary/50'}`}
+                    onClick={() => setIsFree(isFree === false ? null : false)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isFree === false ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-foreground'}`}
                   >
                     Paid
                   </button>
@@ -241,9 +246,9 @@ export function ExplorePage() {
                   {RADIUS_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
-                      onClick={() => setRadius(opt.value)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
-                        radius === opt.value ? 'bg-primary text-primary-foreground' : 'bg-secondary/50'
+                      onClick={() => setRadius(radius === opt.value ? null : opt.value)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        radius === opt.value ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-foreground'
                       }`}
                     >
                       {opt.label}
