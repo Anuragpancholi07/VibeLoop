@@ -19,7 +19,17 @@ export function ProfilePage() {
   const [attendingEvents, setAttendingEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'hosting' | 'attending'>('hosting');
+  const [activeTab, setActiveTab] = useState<'hosting' | 'attending' | 'followers' | 'following'>('hosting');
+
+  // Real-time counter states
+  const [hostedCount, setHostedCount] = useState(0);
+  const [attendedCount, setAttendedCount] = useState(0);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+
+  // Real-time lists for followers/following
+  const [followers, setFollowers] = useState<Profile[]>([]);
+  const [following, setFollowing] = useState<Profile[]>([]);
 
   const isOwnProfile = !id || id === user?.id;
   const profileId = id || user?.id;
@@ -38,6 +48,24 @@ export function ProfilePage() {
         setProfile(data as Profile);
       }
 
+      // Fetch dynamic stats counts from database in real-time
+      const [
+        { count: dbHostedCount },
+        { count: dbAttendedCount },
+        { count: dbFollowersCount },
+        { count: dbFollowingCount }
+      ] = await Promise.all([
+        supabase.from('events').select('id', { count: 'exact', head: true }).eq('host_id', profileId),
+        supabase.from('event_attendees').select('id', { count: 'exact', head: true }).eq('user_id', profileId).eq('status', 'approved'),
+        supabase.from('follows').select('id', { count: 'exact', head: true }).eq('following_id', profileId),
+        supabase.from('follows').select('id', { count: 'exact', head: true }).eq('follower_id', profileId)
+      ]);
+
+      setHostedCount(dbHostedCount || 0);
+      setAttendedCount(dbAttendedCount || 0);
+      setFollowersCount(dbFollowersCount || 0);
+      setFollowingCount(dbFollowingCount || 0);
+
       // Hosted events
       const { data: hosted } = await supabase
         .from('events').select('*, category:event_categories(*)')
@@ -49,6 +77,20 @@ export function ProfilePage() {
         .from('event_attendees').select('event:events(*, category:event_categories(*))')
         .eq('user_id', profileId).eq('status', 'approved').limit(10);
       setAttendingEvents(((attending || []).map((a: any) => a.event).filter(Boolean)) as Event[]);
+
+      // Followers list
+      const { data: followersData } = await supabase
+        .from('follows')
+        .select('follower:profiles!follower_id(*)')
+        .eq('following_id', profileId);
+      setFollowers((followersData || []).map((f: any) => f.follower).filter(Boolean) as Profile[]);
+
+      // Following list
+      const { data: followingData } = await supabase
+        .from('follows')
+        .select('following:profiles!following_id(*)')
+        .eq('follower_id', profileId);
+      setFollowing((followingData || []).map((f: any) => f.following).filter(Boolean) as Profile[]);
 
       // Check follow status
       if (user && !isOwnProfile) {
@@ -65,12 +107,23 @@ export function ProfilePage() {
 
   const handleFollow = async () => {
     if (!user || !profileId) return;
-    if (isFollowing) {
-      await supabase.from('follows').delete().eq('follower_id', user.id).eq('following_id', profileId);
-      setIsFollowing(false);
-    } else {
-      await supabase.from('follows').insert({ follower_id: user.id, following_id: profileId });
-      setIsFollowing(true);
+    try {
+      if (isFollowing) {
+        await supabase.from('follows').delete().eq('follower_id', user.id).eq('following_id', profileId);
+        setIsFollowing(false);
+        setFollowersCount((prev) => Math.max(0, prev - 1));
+        setFollowers((prev) => prev.filter((f) => f.id !== user.id));
+      } else {
+        await supabase.from('follows').insert({ follower_id: user.id, following_id: profileId });
+        setIsFollowing(true);
+        setFollowersCount((prev) => prev + 1);
+        const { data: myProfileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        if (myProfileData) {
+          setFollowers((prev) => [...prev, myProfileData as Profile]);
+        }
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -102,22 +155,22 @@ export function ProfilePage() {
 
         {/* Stats */}
         <div className="flex justify-center gap-8 mt-4">
-          <div className="text-center">
-            <p className="text-lg font-bold">{profile.events_hosted}</p>
+          <button onClick={() => setActiveTab('hosting')} className="text-center cursor-pointer hover:opacity-85 transition-opacity">
+            <p className="text-lg font-bold">{hostedCount}</p>
             <p className="text-xs text-muted-foreground">Hosted</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold">{profile.events_attended}</p>
+          </button>
+          <button onClick={() => setActiveTab('attending')} className="text-center cursor-pointer hover:opacity-85 transition-opacity">
+            <p className="text-lg font-bold">{attendedCount}</p>
             <p className="text-xs text-muted-foreground">Attended</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold">{profile.followers_count}</p>
+          </button>
+          <button onClick={() => setActiveTab('followers')} className="text-center cursor-pointer hover:opacity-85 transition-opacity">
+            <p className="text-lg font-bold">{followersCount}</p>
             <p className="text-xs text-muted-foreground">Followers</p>
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold">{profile.following_count}</p>
+          </button>
+          <button onClick={() => setActiveTab('following')} className="text-center cursor-pointer hover:opacity-85 transition-opacity">
+            <p className="text-lg font-bold">{followingCount}</p>
             <p className="text-xs text-muted-foreground">Following</p>
-          </div>
+          </button>
         </div>
 
         {/* Actions */}
@@ -151,27 +204,98 @@ export function ProfilePage() {
       </motion.div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl bg-secondary/30 mb-4">
-        {(['hosting', 'attending'] as const).map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors capitalize ${activeTab === tab ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground'}`}>
-            {t(`profile.${tab}`)}
+      <div className="flex gap-1 p-1 rounded-xl bg-secondary/30 mb-4 overflow-x-auto">
+        {[
+          { id: 'hosting', label: 'Hosted' },
+          { id: 'attending', label: 'Attended' },
+          { id: 'followers', label: `Followers (${followersCount})` },
+          { id: 'following', label: `Following (${followingCount})` }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap ${
+              activeTab === tab.id
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground'
+            }`}
+          >
+            {tab.label}
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
       <div className="space-y-3">
-        {activeTab === 'hosting' ? (
+        {activeTab === 'hosting' && (
           hostedEvents.length > 0 ? (
             hostedEvents.map((event, i) => <EventCard key={event.id} event={event} variant="compact" index={i} />)
           ) : (
             <EmptyState icon={<Calendar className="w-8 h-8 text-muted-foreground" />} title="No events hosted yet" />
           )
-        ) : (
+        )}
+
+        {activeTab === 'attending' && (
           attendingEvents.length > 0 ? (
             attendingEvents.map((event, i) => <EventCard key={event.id} event={event} variant="compact" index={i} />)
           ) : (
-            <EmptyState icon={<Users className="w-8 h-8 text-muted-foreground" />} title="No events attended yet" />
+            <EmptyState icon={<Calendar className="w-8 h-8 text-muted-foreground" />} title="No events attended yet" />
+          )
+        )}
+
+        {activeTab === 'followers' && (
+          followers.length > 0 ? (
+            <div className="space-y-2">
+              {followers.map((follower) => (
+                <Link
+                  key={follower.id}
+                  to={`/profile/${follower.id}`}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:bg-secondary/30 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {follower.avatar_url ? (
+                      <img src={follower.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-sm font-bold text-primary">{follower.full_name?.[0] || '?'}</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{follower.full_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">@{follower.username}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={<Users className="w-8 h-8 text-muted-foreground" />} title="No followers yet" />
+          )
+        )}
+
+        {activeTab === 'following' && (
+          following.length > 0 ? (
+            <div className="space-y-2">
+              {following.map((followedUser) => (
+                <Link
+                  key={followedUser.id}
+                  to={`/profile/${followedUser.id}`}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:bg-secondary/30 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {followedUser.avatar_url ? (
+                      <img src={followedUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-sm font-bold text-primary">{followedUser.full_name?.[0] || '?'}</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{followedUser.full_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">@{followedUser.username}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={<Users className="w-8 h-8 text-muted-foreground" />} title="Not following anyone yet" />
           )
         )}
       </div>
