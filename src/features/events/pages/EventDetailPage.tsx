@@ -814,7 +814,7 @@ export function EventDetailPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
                   {event.address}
-                  {distance !== null && ` (${distance.toFixed(1)} km away)`}
+                  {distance !== null && distance !== undefined && ` (${distance.toFixed(1)} km away)`}
                 </p>
                 <p className="text-xs text-muted-foreground">{event.city}</p>
               </div>

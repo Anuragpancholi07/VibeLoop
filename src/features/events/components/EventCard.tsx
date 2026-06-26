@@ -20,7 +20,7 @@ export function EventCard({ event, variant = 'default', className, index = 0 }: 
   const { userCoords } = useLocationContext();
 
   let distance = event.distance_km;
-  if (distance === undefined && userCoords && event.latitude && event.longitude) {
+  if ((distance === undefined || distance === null) && userCoords && event.latitude && event.longitude) {
     distance = getDistanceKm(userCoords.lat, userCoords.lng, event.latitude, event.longitude);
   }
 
@@ -209,7 +209,7 @@ export function EventCard({ event, variant = 'default', className, index = 0 }: 
                 <MapPin className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                 <span className="truncate">
                   {event.address || event.city}
-                  {distance !== undefined && ` • ${distance.toFixed(1)} km`}
+                  {distance !== undefined && distance !== null && ` • ${distance.toFixed(1)} km`}
                 </span>
               </div>
             )}

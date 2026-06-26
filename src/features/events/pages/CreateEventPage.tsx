@@ -8,6 +8,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { slugify } from '@/lib/utils';
 import { EVENT_TYPES, GENDER_OPTIONS } from '@/lib/constants';
 import type { EventCategory } from '@/types';
+import { LocationSelector } from '@/components/common';
 
 const STEPS = ['Basic Info', 'Type & Schedule', 'Location', 'Capacity & Pricing', 'Rules & Publish'];
 
@@ -771,13 +772,13 @@ export function CreateEventPage() {
           />
         </div>
         <div>
-          <label className="text-sm font-medium mb-1 block">City *</label>
-          <input 
-            type="text" 
-            value={form.city} 
-            onChange={(e) => updateForm('city', e.target.value)} 
-            placeholder="City Name" 
-            className="w-full px-4 py-2.5 rounded-xl bg-secondary/50 border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-xs" 
+          <label className="text-sm font-medium mb-1.5 block">City *</label>
+          <LocationSelector
+            value={form.city}
+            onChange={(city) => updateForm('city', city)}
+            placeholder="Select City"
+            showAllIndia={false}
+            className="w-full"
           />
         </div>
       </div>

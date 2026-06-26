@@ -6,6 +6,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { useLocationContext } from '@/context/LocationContext';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { LocationSelector } from '@/components/common';
 
 interface HeaderProps {
   title?: string;
@@ -80,26 +81,12 @@ export function Header({ title, showSearch = true, className }: HeaderProps) {
           </Link>
 
           {/* Location Dropdown */}
-          <div className="relative flex-shrink-0">
-            <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="appearance-none pl-8 pr-7 py-1 rounded-full text-xs font-semibold bg-secondary/50 border border-border text-foreground hover:bg-secondary cursor-pointer transition-all focus:outline-none focus:ring-1 focus:ring-primary min-w-[100px]"
-            >
-              <option value="">All India</option>
-              {availableCities.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
-            </select>
-            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-primary">
-              <MapPin className="w-3.5 h-3.5" />
-            </div>
-            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
-              <ChevronDown className="w-3 h-3" />
-            </div>
-          </div>
+          <LocationSelector
+            value={selectedCity}
+            onChange={setSelectedCity}
+            showAllIndia={true}
+            className="flex-shrink-0"
+          />
         </div>
 
         {/* Search bar (desktop) */}

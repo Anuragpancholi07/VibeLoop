@@ -69,6 +69,28 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     fetchCities();
   }, []);
 
+  // Try to get geolocation automatically on mount if no city is saved or it is 'Current Location'
+  useEffect(() => {
+    const saved = localStorage.getItem('vibeloop_selected_city');
+    if (!saved || saved === 'Current Location') {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setUserCoords({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            });
+            setSelectedCityState('Current Location');
+            localStorage.setItem('vibeloop_selected_city', 'Current Location');
+          },
+          (error) => {
+            console.error('Automatic geolocation failed:', error);
+          }
+        );
+      }
+    }
+  }, []);
+
   // Update selected city when profile city changes
   useEffect(() => {
     if (profile?.city) {
@@ -84,10 +106,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   // Resolve user coords
   useEffect(() => {
-    if (selectedCity && CITY_COORDINATES[selectedCity]) {
-      setUserCoords(CITY_COORDINATES[selectedCity]);
-    } else {
-      // Fallback to browser geolocation
+    if (!selectedCity) {
+      setUserCoords(null);
+      return;
+    }
+
+    if (selectedCity === 'Current Location') {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
@@ -104,7 +128,35 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       } else {
         setUserCoords(null);
       }
+      return;
     }
+
+    if (CITY_COORDINATES[selectedCity]) {
+      setUserCoords(CITY_COORDINATES[selectedCity]);
+      return;
+    }
+
+    // Geocode other Indian districts dynamically
+    const geocodeCity = async () => {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(selectedCity + ', India')}&limit=1`
+        );
+        const data = await response.json();
+        if (data && data.length > 0) {
+          setUserCoords({
+            lat: parseFloat(data[0].lat),
+            lng: parseFloat(data[0].lon),
+          });
+        } else {
+          setUserCoords(null);
+        }
+      } catch (err) {
+        console.error('Error geocoding selected city:', err);
+        setUserCoords(null);
+      }
+    };
+    geocodeCity();
   }, [selectedCity]);
 
   const setSelectedCity = async (city: string) => {
