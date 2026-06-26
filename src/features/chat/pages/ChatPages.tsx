@@ -20,6 +20,19 @@ export function ChatListPage() {
     loadRooms();
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel('chat-list-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => {
+        loadRooms();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
   const loadRooms = async () => {
     try {
       const { data: memberData } = await supabase
@@ -27,7 +40,7 @@ export function ChatListPage() {
       const roomIds = (memberData || []).map((m: any) => m.room_id);
       if (roomIds.length === 0) { setIsLoading(false); return; }
 
-      const { data } = await supabase
+      const { data: roomsData } = await supabase
         .from('chat_rooms')
         .select(`
           *,
@@ -43,7 +56,22 @@ export function ChatListPage() {
         `)
         .in('id', roomIds)
         .order('last_message_at', { ascending: false });
-      setRooms((data || []) as ChatRoom[]);
+
+      // Fetch unread message counts using helper RPC
+      const { data: unreadCounts } = await supabase
+        .rpc('get_unread_message_counts', { p_user_id: user!.id });
+
+      const countsMap = (unreadCounts || []).reduce((acc: any, curr: any) => {
+        acc[curr.room_id] = curr.unread_count;
+        return acc;
+      }, {});
+
+      const roomsWithCounts = (roomsData || []).map((room: any) => ({
+        ...room,
+        unread_count: Number(countsMap[room.id] || 0)
+      }));
+
+      setRooms(roomsWithCounts as ChatRoom[]);
     } catch (error) {
       console.error(error);
     } finally {
@@ -126,12 +154,25 @@ export function ChatRoomPage() {
   const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const markAsRead = async () => {
+    if (!user || !id) return;
+    try {
+      await supabase
+        .from('chat_room_members')
+        .update({ last_read_at: new Date().toISOString() })
+        .eq('room_id', id)
+        .eq('user_id', user.id);
+    } catch (error) {
+      console.error('Failed to update last_read_at:', error);
+    }
+  };
+
   useEffect(() => {
     if (id) loadRoom();
   }, [id]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !user) return;
     const channel = supabase
       .channel(`room-${id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${id}` },
@@ -139,11 +180,14 @@ export function ChatRoomPage() {
           const newMsg = payload.new as ChatMessage;
           setMessages((prev) => [...prev, newMsg]);
           scrollToBottom();
+          if (newMsg.sender_id !== user.id) {
+            markAsRead();
+          }
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [id]);
+  }, [id, user]);
 
   const loadRoom = async () => {
     try {
@@ -168,6 +212,7 @@ export function ChatRoomPage() {
         .from('chat_messages').select('*, sender:profiles(*)').eq('room_id', id).order('created_at').limit(100);
       setMessages((msgData || []) as ChatMessage[]);
       setTimeout(scrollToBottom, 100);
+      await markAsRead();
     } catch (error) {
       console.error(error);
     } finally {
