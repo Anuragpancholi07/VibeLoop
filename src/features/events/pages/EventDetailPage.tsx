@@ -481,80 +481,20 @@ export function EventDetailPage() {
     }
 
     try {
-      // 1. Find rooms where the current user is a member
-      const { data: myRooms } = await supabase
-        .from('chat_room_members')
-        .select('room_id')
-        .eq('user_id', user.id);
+      const { data: roomId, error } = await supabase.rpc('create_direct_chat', {
+        target_user_id: targetUserId
+      });
 
-      const myRoomIds = (myRooms || []).map((r: any) => r.room_id);
+      if (error) throw error;
+      if (!roomId) throw new Error('No room ID returned');
 
-      let existingRoomId: string | null = null;
-
-      if (myRoomIds.length > 0) {
-        // 2. Find if any of these rooms are of type 'direct' and also have the target user as a member
-        const { data: commonRooms } = await supabase
-          .from('chat_room_members')
-          .select('room_id')
-          .in('room_id', myRoomIds)
-          .eq('user_id', targetUserId);
-
-        const commonRoomIds = (commonRooms || []).map((r: any) => r.room_id);
-
-        if (commonRoomIds.length > 0) {
-          const { data: directRoom } = await supabase
-            .from('chat_rooms')
-            .select('id')
-            .in('id', commonRoomIds)
-            .eq('type', 'direct')
-            .maybeSingle();
-
-          if (directRoom) {
-            existingRoomId = directRoom.id;
-          }
-        }
-      }
-
-      if (existingRoomId) {
-        navigate(`/chat/${existingRoomId}`);
-      } else {
-        // 3. Create a new chat room of type 'direct' by generating ID client-side
-        const newRoomId = typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-              const r = (Math.random() * 16) | 0;
-              const v = c === 'x' ? r : (r & 0x3) | 0x8;
-              return v.toString(16);
-            });
-
-        const { error: roomError } = await supabase
-          .from('chat_rooms')
-          .insert({
-            id: newRoomId,
-            type: 'direct',
-            name: null,
-            is_active: true
-          });
-
-        if (roomError) throw roomError;
-
-        // 4. Add both members to the room
-        const { error: membersError } = await supabase
-          .from('chat_room_members')
-          .insert([
-            { room_id: newRoomId, user_id: user.id },
-            { room_id: newRoomId, user_id: targetUserId }
-          ]);
-
-        if (membersError) throw membersError;
-
-        navigate(`/chat/${newRoomId}`);
-      }
-    } catch (error) {
+      navigate(`/chat/${roomId}`);
+    } catch (error: any) {
       console.error('Error starting direct chat:', error);
-      alert('Failed to start chat. Please try again.');
+      alert(`Failed to start chat: ${error?.message || 'Please try again.'}`);
     }
   };
+
 
   const handleReportEvent = async () => {
     if (!isAuthenticated) {
